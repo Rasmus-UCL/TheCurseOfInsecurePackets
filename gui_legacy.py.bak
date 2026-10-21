@@ -1,0 +1,2097 @@
+"""Graphical Tkinter client for The Curse of Insecure Packets.
+
+Features an OT Incident Responder Cockpit with:
+  - Dual-View Screen (Plant Floor 2D Vector Map vs. Siemens Field PG M6 Industrial Laptop).
+  - Equipment Inspection HUD with real-time telemetry and direct physical action buttons.
+  - Interactive Wireshark Protocol Dissector (Modbus TCP, PROFINET DCP/RT, S7comm, OPC UA Binary).
+  - Siemens SCALANCE WBM (Web-Based Management) for S615 DPI firewall & XB-200 MRP ring/port security.
+  - Siemens TIA Portal V19 simulator for S7-1500 protection, PUT/GET hardening, and offline USB backups.
+  - WinCC SCADA process mimic with animated manometer gauge, valve indicators, and NIS2 Artikel 21 dashboard.
+  - In-canvas TS35 DIN-rail mounting & cabling workbenches for Chapter 1 and Chapter 2.
+"""
+
+from __future__ import annotations
+
+import math
+import re
+import tkinter as tk
+from collections.abc import Callable
+from typing import Any
+
+from engine import GameEngine
+from models import OBJECTIVES, ROOMS
+
+
+class GameCanvas(tk.Canvas):
+    """Clickable 2D retro-industrial room map, Field Laptop workstation, and interactive workbenches."""
+
+    def __init__(self, master: GameApp, engine: GameEngine, on_hotspot_click: Any, **kwargs: object) -> None:
+        super().__init__(master, bg="#0d1821", highlightthickness=1, highlightbackground="#1f364d", **kwargs)
+        self.master_app: GameApp = master
+        self.engine = engine
+        self.on_hotspot_click = on_hotspot_click
+        self.hovered_hotspot: str | None = None
+        self.selected_hotspot: str | None = None
+        self.hotspot_rects: dict[str, tuple[int, int, int, int]] = {}
+        self.canvas_buttons: dict[str, tuple[int, int, int, int, Callable[[], None]]] = {}
+
+        # View mode: "room", "laptop", "vfd_workbench", "switch_workbench"
+        self.view_mode: str = "room"
+        # Laptop tab: "wireshark", "scalance", "tia", "scada"
+        self.laptop_tab: str = "wireshark"
+        self.selected_packet_idx: int = 0
+
+        self.vfd_step: int = 0      # 0: not mounted, 1: mounted, 2: cabled, 3: DPI active
+        self.switch_step: int = 0   # 0: unmanaged & Pi, 1: Pi removed, 2: SCALANCE mounted, 3: MRP active
+        self.anim_tick: int = 0
+
+        self.bind("<Configure>", lambda _event: self.draw())
+        self.bind("<Motion>", self.on_mouse_move)
+        self.bind("<Leave>", self.on_mouse_leave)
+        self.bind("<Button-1>", self.click_canvas)
+
+        self.start_animation()
+        self.draw()
+
+    def start_animation(self) -> None:
+        self.animate_frame()
+
+    def animate_frame(self) -> None:
+        if not self.winfo_exists():
+            return
+        self.anim_tick = (self.anim_tick + 1) % 120
+        # Refresh dynamic elements (vibrating needle, blinking LEDs, packet flow, acute countdowns)
+        if (
+            self.view_mode != "room"
+            or self.engine.pump_deadline_active
+            or self.engine.cavitation_deadline_active
+            or self.selected_hotspot is not None
+        ):
+            self.draw()
+        self.after(200, self.animate_frame)
+
+    def on_mouse_move(self, event: tk.Event[tk.Canvas]) -> None:
+        x, y = event.x, event.y
+        new_hover = None
+
+        # Check canvas buttons first
+        for name, (bx1, by1, bx2, by2, _) in self.canvas_buttons.items():
+            if bx1 <= x <= bx2 and by1 <= y <= by2:
+                new_hover = f"btn_{name}"
+                break
+
+        if not new_hover:
+            for name, (rx1, ry1, rx2, ry2) in self.hotspot_rects.items():
+                if rx1 <= x <= rx2 and ry1 <= y <= ry2:
+                    new_hover = name
+                    break
+
+        if new_hover != self.hovered_hotspot:
+            self.hovered_hotspot = new_hover
+            self.configure(cursor="hand2" if new_hover else "")
+            if self.view_mode == "room" and not self.selected_hotspot:
+                self.draw()
+
+    def on_mouse_leave(self, _event: tk.Event[tk.Canvas]) -> None:
+        if self.hovered_hotspot:
+            self.hovered_hotspot = None
+            self.configure(cursor="")
+            if self.view_mode == "room" and not self.selected_hotspot:
+                self.draw()
+
+    def click_canvas(self, event: tk.Event[tk.Canvas]) -> None:
+        x, y = event.x, event.y
+
+        # 1. Canvas Interactive Buttons (Tabs, Actions, Close buttons)
+        for _name, (bx1, by1, bx2, by2, callback) in list(self.canvas_buttons.items()):
+            if bx1 <= x <= bx2 and by1 <= y <= by2:
+                callback()
+                return
+
+        # 2. View-specific clicks
+        if self.view_mode == "room":
+            for name, (rx1, ry1, rx2, ry2) in self.hotspot_rects.items():
+                if rx1 <= x <= rx2 and ry1 <= y <= ry2:
+                    self.selected_hotspot = name
+                    self.draw()
+                    self.on_hotspot_click(name)
+                    return
+            # If clicked in blank room space, deselect HUD
+            if self.selected_hotspot:
+                self.selected_hotspot = None
+                self.draw()
+
+        elif self.view_mode == "vfd_workbench":
+            for name, (rx1, ry1, rx2, ry2) in self.hotspot_rects.items():
+                if rx1 <= x <= rx2 and ry1 <= y <= ry2:
+                    self.on_vfd_workbench_click(name)
+                    return
+
+        elif self.view_mode == "switch_workbench":
+            for name, (rx1, ry1, rx2, ry2) in self.hotspot_rects.items():
+                if rx1 <= x <= rx2 and ry1 <= y <= ry2:
+                    self.on_switch_workbench_click(name)
+                    return
+
+    def draw(self) -> None:
+        self.delete("all")
+        self.hotspot_rects.clear()
+        self.canvas_buttons.clear()
+
+        # Synchronize workbench steps with engine flags
+        if "chapter-1-done" in self.engine.flags:
+            self.vfd_step = 3
+        if "chapter-2-done" in self.engine.flags:
+            self.switch_step = 3
+        elif "pi-removed" in self.engine.flags and self.switch_step == 0:
+            self.switch_step = 1
+
+        width = max(self.winfo_width(), 760)
+        height = max(self.winfo_height(), 350)
+
+        if self.view_mode == "room":
+            self.draw_room(width, height)
+            if self.selected_hotspot:
+                self.draw_equipment_hud(width, height)
+        elif self.view_mode == "laptop":
+            self.draw_laptop(width, height)
+        elif self.view_mode == "vfd_workbench":
+            self.draw_vfd_workbench(width, height)
+        elif self.view_mode == "switch_workbench":
+            self.draw_switch_workbench(width, height)
+
+    # =========================================================================
+    # 1. PLANT FLOOR ROOM VIEW RENDERING
+    # =========================================================================
+    def draw_room(self, width: int, height: int) -> None:
+        current_room = ROOMS[self.engine.room]
+
+        # Industrial Grating Backdrop
+        self.create_rectangle(0, 0, width, height, fill="#0d1821", outline="")
+        for gy in range(65, height, 38):
+            self.create_line(0, gy, width, gy, fill="#122332", width=1)
+        for gx in range(0, width, 45):
+            self.create_line(gx, 65, gx, height, fill="#122332", width=1)
+
+        # Overhead Cable Tray & Header
+        self.create_rectangle(0, 0, width, 58, fill="#162736", outline="#25425c", width=1)
+        for hx in range(0, width, 28):
+            self.create_polygon(hx, 0, hx + 12, 0, hx + 4, 10, hx - 8, 10, fill="#f6d365", outline="")
+            self.create_polygon(hx + 12, 0, hx + 24, 0, hx + 16, 10, hx + 4, 10, fill="#162736", outline="")
+
+        self.create_text(
+            20, 16, anchor="nw",
+            text=f"ZONE: {current_room.title.upper()} | {current_room.purdue_level.upper()}",
+            fill="#f6d365", font=("Consolas", 13, "bold"),
+        )
+        self.create_text(
+            20, 36, anchor="nw",
+            text=f"Topologi: {current_room.zone}  |  Krav: IEC 62443 SL-2  |  Klik en komponent for inspektion & handling",
+            fill="#9cbcd4", font=("Segoe UI", 9),
+        )
+
+        # Quick Laptop Button on Room Canvas (Top-Right)
+        lap_btn_x1, lap_btn_x2 = width - 180, width - 16
+        self.create_rectangle(lap_btn_x1, 14, lap_btn_x2, 44, fill="#0284c7", outline="#38bdf8", width=1)
+        self.create_text(lap_btn_x1 + 10, 22, anchor="nw", text="💻 Åbn Felt-Laptop", fill="white", font=("Segoe UI", 9, "bold"))
+        self.canvas_buttons["room_open_laptop"] = (lap_btn_x1, 14, lap_btn_x2, 44, self.master_app.switch_to_laptop_view)
+
+        self.draw_room_background(width, height)
+
+        hotspots = current_room.hotspots
+        count = len(hotspots)
+        if count == 0:
+            return
+
+        cols = min(4, count)
+        card_w = min(220, (width - 50 - (cols - 1) * 16) // cols)
+        card_h = 125 if not self.selected_hotspot else 105
+        start_y = 75
+
+        for idx, name in enumerate(hotspots):
+            col = idx % cols
+            row = idx // cols
+            x1 = 25 + col * (card_w + 16)
+            y1 = start_y + row * (card_h + 16)
+            x2 = x1 + card_w
+            y2 = y1 + card_h
+            self.hotspot_rects[name] = (x1, y1, x2, y2)
+            self.draw_hotspot_card(name, x1, y1, x2, y2, is_hovered=(name == self.hovered_hotspot), is_selected=(name == self.selected_hotspot))
+
+        if not self.selected_hotspot:
+            footer_y = height - 24
+            self.create_rectangle(0, footer_y, width, height, fill="#0a1219", outline="#1c3347", width=1)
+            hover_info = f"▶ PEGER PÅ: [{self.hovered_hotspot.upper()}] - Klik med musen for at undersøge" if self.hovered_hotspot and not self.hovered_hotspot.startswith("btn_") else "▶ RUM-STATUS: Vælg en komponent ovenfor eller åbn Felt-Laptop"
+            self.create_text(20, footer_y + 4, anchor="nw", text=hover_info, fill="#64d8cb", font=("Consolas", 9, "bold"))
+
+    def draw_room_background(self, width: int, height: int) -> None:
+        r = self.engine.room
+        if r == "pumpehuset":
+            pipe_y = 175
+            c1_done = "chapter-1-done" in self.engine.flags
+            pipe_color = "#2b5c73" if c1_done else "#852b2b"
+            self.create_rectangle(10, pipe_y - 10, width - 10, pipe_y + 10, fill=pipe_color, outline="#1b3a4a", width=2)
+            self.create_text(width - 150, pipe_y - 18, text="HOVED-RØR 16 BAR / DN150", fill="#a1c4d9", font=("Consolas", 8))
+        elif r == "ventil-oen":
+            tube_y = 185
+            self.create_line(15, tube_y, width - 15, tube_y, fill="#3b7a99", width=4, dash=(6, 3))
+            self.create_line(15, tube_y + 14, width - 15, tube_y + 14, fill="#2b5c73", width=3)
+        elif r == "el-tavlen":
+            rail_y = 170
+            self.create_rectangle(15, rail_y - 8, width - 15, rail_y + 8, fill="#52606d", outline="#8295a5", width=2)
+            self.create_text(width - 160, rail_y - 18, text="35mm DIN-SKINNE TS35", fill="#8295a5", font=("Consolas", 8))
+        elif r == "kontrolrummet":
+            self.create_rectangle(20, 70, width - 20, height - 35, fill="", outline="#1f425f", width=1, dash=(4, 4))
+        elif r == "indgangen":
+            self.create_line(30, 220, width - 30, 220, fill="#254d68", width=2)
+
+    def draw_hotspot_card(self, name: str, x1: int, y1: int, x2: int, y2: int, is_hovered: bool, is_selected: bool) -> None:
+        flags = self.engine.flags
+        solved_c1 = "chapter-1-done" in flags
+        solved_c2 = "chapter-2-done" in flags
+        solved_c3 = "chapter-3-done" in flags
+        solved_c4 = "chapter-4-done" in flags
+
+        card_bg = "#23415c" if is_selected else ("#1b354b" if is_hovered else "#132535")
+        border_color = "#38bdf8" if is_selected else ("#f6d365" if is_hovered else "#2a4d6c")
+        border_width = 3 if (is_selected or is_hovered) else 1
+
+        self.create_rectangle(x1, y1, x2, y2, fill=card_bg, outline=border_color, width=border_width)
+
+        badge_text = "NORMAL"
+        badge_color = "#22c55e"
+        icon_type = "[HARDWARE]"
+        sub_info = ""
+
+        # Pulsing indicator for active alarms
+        pulse = (self.anim_tick // 2) % 2 == 0
+
+        if name == "pumpe 2":
+            icon_type = "[PUMPE / MOTOR]"
+            if solved_c1:
+                badge_text = "42.0 BAR - OK"
+                badge_color = "#22c55e"
+                sub_info = "50.0 Hz | Stabil drift"
+            elif self.engine.pump_deadline_active:
+                badge_text = "133.7 BAR - ALARM"
+                badge_color = "#ef4444" if pulse else "#b91c1c"
+                sub_info = "Modbus FC 06 angreb!"
+            else:
+                badge_text = "STAND-BY"
+                badge_color = "#38bdf8"
+                sub_info = "Afventer opstart"
+        elif name == "scada":
+            icon_type = "[HMI OPERATØR]"
+            if solved_c1:
+                badge_text = "SYNCED"
+                badge_color = "#22c55e"
+                sub_info = "Live telemetri aktiv"
+            else:
+                badge_text = "FALSK TELEMETRI"
+                badge_color = "#eab308"
+                sub_info = "HMI afkoblet fra måling"
+        elif name == "frekvensomformer":
+            icon_type = "[SINAMICS VFD]"
+            if solved_c1:
+                badge_text = "SIKRET VLAN & DPI"
+                badge_color = "#22c55e"
+                sub_info = "SCALANCE S615 aktiv"
+            else:
+                badge_text = "PORT 502 SÅRBAR"
+                badge_color = "#ef4444" if pulse else "#dc2626"
+                sub_info = "Ubeskyttet modbus-bus"
+        elif name == "ventiler":
+            icon_type = "[FESTO VENTIL-Ø]"
+            if solved_c2:
+                badge_text = "DETERMINISTISK"
+                badge_color = "#22c55e"
+                sub_info = "PROFINET RT cyklus 1ms"
+            elif self.engine.cavitation_deadline_active:
+                badge_text = "🚨 KAVITATION"
+                badge_color = "#ef4444" if pulse else "#7f1d1d"
+                sub_info = "Ventiler låst i fejl!"
+            else:
+                badge_text = "I/O KAOS"
+                badge_color = "#ef4444" if pulse else "#dc2626"
+                sub_info = "Kavitation & Jitter"
+        elif name == "unmanaged switch":
+            icon_type = "[NETVÆRKSSWITCH]"
+            if solved_c2:
+                badge_text = "SCALANCE MANAGED"
+                badge_color = "#22c55e"
+                sub_info = "MRP Ring & Port Security"
+            else:
+                badge_text = "UNMANAGED D-LINK"
+                badge_color = "#f59e0b" if pulse else "#ef4444"
+                sub_info = "Broadcast-storm aktiv"
+        elif name == "rogue raspberry pi":
+            icon_type = "[SHADOW ENHED]"
+            if solved_c2 or "pi-removed" in flags:
+                badge_text = "EVIDENS SIKRET"
+                badge_color = "#38bdf8"
+                sub_info = "Fysisk frakoblet"
+            else:
+                badge_text = "ROGUE DCP FLOOD"
+                badge_color = "#ef4444" if pulse else "#b91c1c"
+                sub_info = "Kaprer Device Name"
+        elif name == "s7-1500":
+            icon_type = "[SIEMENS PLC]"
+            if solved_c3:
+                badge_text = "CPU RUN - SECURE"
+                badge_color = "#22c55e"
+                sub_info = "PUT/GET Fra | TLS Aktiv"
+            else:
+                badge_text = "CPU STOP - SÅRBAR"
+                badge_color = "#ef4444"
+                sub_info = "PUT/GET åben på port 102"
+        elif name == "d-link switch":
+            icon_type = "[SWITCH 100M]"
+            if solved_c2 or solved_c3:
+                badge_text = "UDKOBLET"
+                badge_color = "#64748b"
+                sub_info = "Udfaset af drift"
+            else:
+                badge_text = "INGEN SIKKERHED"
+                badge_color = "#eab308"
+                sub_info = "Unmanaged IT-skrot"
+        elif name == "scalance s615":
+            icon_type = "[FIREWALL ROUTER]"
+            if solved_c1 or solved_c3:
+                badge_text = "CONDUIT AKTIV"
+                badge_color = "#22c55e"
+                sub_info = "DPI Filtrering i drift"
+            else:
+                badge_text = "I PAPKASSE"
+                badge_color = "#94a3b8"
+                sub_info = "Ubrugt på gulvet"
+        elif name == "scada pc":
+            icon_type = "[WINCC RUNTIME]"
+            if solved_c4:
+                badge_text = "STABIL / SIEM"
+                badge_color = "#22c55e"
+                sub_info = "Syslog overvåget"
+            else:
+                badge_text = "POST-IT KODEORD"
+                badge_color = "#eab308"
+                sub_info = "Alarmer flyder over"
+        elif name == "4g-router":
+            icon_type = "[SHADOW MODEM]"
+            if solved_c4 or "router-removed" in flags:
+                badge_text = "FRAKOBLET"
+                badge_color = "#38bdf8"
+                sub_info = "Bagdør permanent lukket"
+            else:
+                badge_text = "IDMZ BAGDØR"
+                badge_color = "#ef4444"
+                sub_info = "Uautoriseret 4G-link"
+        elif name == "opc ua server":
+            icon_type = "[OPC UA PORT 4840]"
+            if solved_c4:
+                badge_text = "SIGN & ENCRYPT"
+                badge_color = "#22c55e"
+                sub_info = "Basic256Sha256 + mTLS"
+            else:
+                badge_text = "POLICY: NONE"
+                badge_color = "#ef4444"
+                sub_info = "Anonymous Login tilladt"
+        elif name == "kaffemaskine":
+            icon_type = "[DRIFTSSIKRING]"
+            badge_text = "100% AIR-GAPPED"
+            badge_color = "#a855f7"
+            sub_info = "Kulsort Moccamaster"
+        elif name in {"hoveddør", "revisor"}:
+            icon_type = "[PERIMETER / AUDIT]"
+            if self.engine.chapter == 5:
+                badge_text = "AUDITOR KIRSTEN"
+                badge_color = "#f6d365"
+                sub_info = "Klar til NIS2 evaluering"
+            else:
+                badge_text = "ZONE 1 ADGANG"
+                badge_color = "#38bdf8"
+                sub_info = "RFID Adgangskontrol"
+        elif name == "skilt":
+            icon_type = "[OVERSIGT]"
+            badge_text = "NIS2 OVERBLIK"
+            badge_color = "#f6d365"
+            sub_info = "Purdue Zonedeling"
+
+        self.create_text(x1 + 8, y1 + 10, anchor="nw", text=icon_type, fill="#7ea2be", font=("Consolas", 8, "bold"))
+        self.create_text(x1 + 8, y1 + 25, anchor="nw", text=name.title(), fill="white", font=("Segoe UI", 11, "bold"))
+
+        pill_w = len(badge_text) * 7 + 10
+        pill_x1 = x1 + 8
+        pill_y1 = y1 + 50
+        pill_x2 = min(x2 - 8, pill_x1 + pill_w)
+        pill_y2 = pill_y1 + 18
+        self.create_rectangle(pill_x1, pill_y1, pill_x2, pill_y2, fill="#0a1520", outline=badge_color, width=1)
+        self.create_text(pill_x1 + 4, pill_y1 + 2, anchor="nw", text=badge_text, fill=badge_color, font=("Consolas", 8, "bold"))
+
+        if sub_info:
+            self.create_text(x1 + 8, y1 + 75, anchor="nw", text=sub_info, fill="#a5c4d8", font=("Segoe UI", 8))
+
+        hint_action = "▶ Valgt" if is_selected else "Klik for handlinger"
+        self.create_text(x2 - 8, y2 - 8, anchor="se", text=hint_action, fill="#38bdf8" if is_selected else "#507899", font=("Segoe UI", 7, "bold" if is_selected else "normal"))
+
+    # =========================================================================
+    # 2. EQUIPMENT INSPECTION HUD OVERLAY
+    # =========================================================================
+    def draw_equipment_hud(self, width: int, height: int) -> None:
+        if not self.selected_hotspot:
+            return
+
+        info = self.engine.get_hotspot_info(self.selected_hotspot)
+        hud_h = 105
+        hx1 = 16
+        hy1 = height - hud_h - 10
+        hx2 = width - 16
+        hy2 = height - 10
+
+        # High-contrast inspection deck background
+        self.create_rectangle(hx1, hy1, hx2, hy2, fill="#0f1f2e", outline="#38bdf8", width=2)
+        self.create_rectangle(hx1, hy1, hx2, hy1 + 24, fill="#162e45", outline="")
+
+        # Title & Purdue level badge
+        self.create_text(
+            hx1 + 12, hy1 + 5, anchor="nw",
+            text=f"🔍 INSPEKTION: {info['title'].upper()}",
+            fill="#f6d365", font=("Consolas", 10, "bold"),
+        )
+        self.create_text(
+            hx2 - 180, hy1 + 5, anchor="nw",
+            text=info['purdue'], fill="#9cbcd4", font=("Consolas", 8),
+        )
+
+        # Close button [✕]
+        close_x1, close_x2 = hx2 - 32, hx2 - 8
+        self.create_rectangle(close_x1, hy1 + 2, close_x2, hy1 + 22, fill="#7f1d1d", outline="#ef4444", width=1)
+        self.create_text(close_x1 + 7, hy1 + 4, anchor="nw", text="✕", fill="white", font=("Segoe UI", 9, "bold"))
+        self.canvas_buttons["hud_close"] = (close_x1, hy1 + 2, close_x2, hy1 + 22, self.close_hud)
+
+        # Description
+        self.create_text(
+            hx1 + 12, hy1 + 30, anchor="nw",
+            text=info['desc'], fill="#dceaf4", font=("Segoe UI", 9),
+        )
+
+        # Action Buttons from get_hotspot_info
+        actions = info.get("actions", [])
+        if actions:
+            btn_w = min(220, (hx2 - hx1 - 30) // len(actions))
+            btn_y1 = hy1 + 60
+            btn_y2 = btn_y1 + 32
+
+            for b_idx, (b_label, b_cmd, b_cat) in enumerate(actions):
+                bx1 = hx1 + 14 + b_idx * (btn_w + 10)
+                bx2 = bx1 + btn_w
+
+                if b_cat == "success":
+                    btn_bg = "#0f766e"
+                    btn_border = "#2dd4bf"
+                elif b_cat == "danger":
+                    btn_bg = "#7f1d1d"
+                    btn_border = "#ef4444"
+                elif b_cat == "fix":
+                    btn_bg = "#581c87"
+                    btn_border = "#c084fc"
+                else:
+                    btn_bg = "#0284c7"
+                    btn_border = "#38bdf8"
+
+                self.create_rectangle(bx1, btn_y1, bx2, btn_y2, fill=btn_bg, outline=btn_border, width=1)
+                self.create_text(
+                    (bx1 + bx2) // 2, (btn_y1 + btn_y2) // 2,
+                    text=b_label, fill="white", font=("Segoe UI", 9, "bold"),
+                )
+
+                # Bind click callback to master_app.command(b_cmd)
+                def make_handler(cmd: str) -> Callable[[], None]:
+                    return lambda: self.handle_hud_action(cmd)
+
+                self.canvas_buttons[f"hud_act_{b_idx}"] = (bx1, btn_y1, bx2, btn_y2, make_handler(b_cmd))
+
+    def handle_hud_action(self, cmd: str) -> None:
+        self.selected_hotspot = None
+        if cmd == "firewall workbench":
+            self.master_app.switch_to_vfd_workbench()
+        elif cmd == "switch workbench":
+            self.master_app.switch_to_switch_workbench()
+        elif cmd == "åbn wireshark":
+            self.master_app.switch_to_laptop_view("wireshark")
+            self.master_app.command("åbn wireshark")
+        elif cmd == "åbn tia portal":
+            self.master_app.switch_to_laptop_view("tia")
+            self.master_app.command("åbn tia portal")
+        elif cmd == "åbn laptop":
+            self.master_app.switch_to_laptop_view()
+        else:
+            self.master_app.command(cmd)
+
+    def close_hud(self) -> None:
+        self.selected_hotspot = None
+        self.draw()
+
+    # =========================================================================
+    # 3. FIELD LAPTOP WORKSTATION RENDERING (Dual-View Screen)
+    # =========================================================================
+    def draw_laptop(self, width: int, height: int) -> None:
+        # Metallic Rugged Industrial Frame
+        self.create_rectangle(0, 0, width, height, fill="#0d141b", outline="")
+        lx1 = 12
+        ly1 = 8
+        lx2 = width - 12
+        ly2 = height - 8
+
+        # Laptop Bezel
+        self.create_rectangle(lx1, ly1, lx2, ly2, fill="#151e28", outline="#334155", width=2)
+
+        # Hardware Top Header Bar
+        self.create_rectangle(lx1, ly1, lx2, ly1 + 30, fill="#1c2b3a", outline="")
+        self.create_text(
+            lx1 + 14, ly1 + 8, anchor="nw",
+            text="SIEMENS SIMATIC Field PG M6 Industrial Laptop  [IP: 10.20.1.99 | Subnet: 255.255.255.0]",
+            fill="#38bdf8", font=("Consolas", 9, "bold"),
+        )
+
+        # Hardware Status LEDs
+        led_x = lx2 - 280
+        self.create_text(led_x, ly1 + 8, anchor="nw", text="PWR: ●  LINK: ●  PROFINET: ●  BATT: 98% ⚡", fill="#94a3b8", font=("Consolas", 8))
+        self.create_oval(led_x + 30, ly1 + 10, led_x + 36, ly1 + 16, fill="#22c55e", outline="")
+        self.create_oval(led_x + 85, ly1 + 10, led_x + 91, ly1 + 16, fill="#f59e0b", outline="")
+        self.create_oval(led_x + 165, ly1 + 10, led_x + 171, ly1 + 16, fill="#22c55e", outline="")
+
+        # Close Laptop Button [✕ Luk]
+        close_btn_x1, close_btn_x2 = lx2 - 75, lx2 - 8
+        self.create_rectangle(close_btn_x1, ly1 + 4, close_btn_x2, ly1 + 26, fill="#1e3448", outline="#38bdf8", width=1)
+        self.create_text(close_btn_x1 + 10, ly1 + 7, anchor="nw", text="✕ Luk", fill="#dceaf4", font=("Segoe UI", 8, "bold"))
+        self.canvas_buttons["lap_close"] = (close_btn_x1, ly1 + 4, close_btn_x2, ly1 + 26, self.master_app.switch_to_room_view)
+
+        # Workstation Navigation Tabs
+        tab_y1 = ly1 + 32
+        tab_y2 = tab_y1 + 26
+        tabs = [
+            ("wireshark", "🦈 Wireshark Analyzer"),
+            ("scalance", "🛡️ SCALANCE WBM"),
+            ("tia", "⚙️ TIA Portal V19"),
+            ("scada", "📊 WinCC SCADA & NIS2"),
+        ]
+
+        tx = lx1 + 8
+        for t_key, t_title in tabs:
+            is_active = (self.laptop_tab == t_key)
+            t_w = len(t_title) * 8 + 20
+            t_bg = "#0284c7" if is_active else "#162433"
+            t_fg = "white" if is_active else "#94a3b8"
+            t_border = "#38bdf8" if is_active else "#24374a"
+
+            self.create_rectangle(tx, tab_y1, tx + t_w, tab_y2, fill=t_bg, outline=t_border, width=1)
+            self.create_text(tx + 10, tab_y1 + 5, anchor="nw", text=t_title, fill=t_fg, font=("Segoe UI", 9, "bold" if is_active else "normal"))
+
+            def make_tab_setter(key: str) -> Callable[[], None]:
+                return lambda: self.set_laptop_tab(key)
+
+            self.canvas_buttons[f"lap_tab_{t_key}"] = (tx, tab_y1, tx + t_w, tab_y2, make_tab_setter(t_key))
+            tx += t_w + 6
+
+        # Inner Screen Display Area
+        sx1 = lx1 + 8
+        sy1 = tab_y2 + 4
+        sx2 = lx2 - 8
+        sy2 = ly2 - 8
+
+        self.create_rectangle(sx1, sy1, sx2, sy2, fill="#070d13", outline="#1c3347", width=1)
+
+        if self.laptop_tab == "wireshark":
+            self.draw_laptop_wireshark(sx1, sy1, sx2, sy2)
+        elif self.laptop_tab == "scalance":
+            self.draw_laptop_scalance(sx1, sy1, sx2, sy2)
+        elif self.laptop_tab == "tia":
+            self.draw_laptop_tia(sx1, sy1, sx2, sy2)
+        elif self.laptop_tab == "scada":
+            self.draw_laptop_scada(sx1, sy1, sx2, sy2)
+
+    def set_laptop_tab(self, tab: str) -> None:
+        self.laptop_tab = tab
+        self.selected_packet_idx = 0
+        self.engine.flags.add("laptop-open")
+        if tab == "wireshark":
+            self.engine.flags.add("wireshark-open")
+        self.draw()
+
+    # -------------------------------------------------------------------------
+    # TAB 1: WIRESHARK ANALYZER
+    # -------------------------------------------------------------------------
+    def draw_laptop_wireshark(self, sx1: int, sy1: int, sx2: int, sy2: int) -> None:
+        self.engine.flags.add("laptop-open")
+        self.engine.flags.add("wireshark-open")
+        ws = self.engine.get_wireshark_data()
+        packets = ws.get("packets", [])
+
+        # Filter Bar
+        f_y1 = sy1 + 6
+        f_y2 = f_y1 + 22
+        self.create_rectangle(sx1 + 8, f_y1, sx2 - 8, f_y2, fill="#0e1a26", outline="#25425c", width=1)
+        self.create_text(sx1 + 14, f_y1 + 4, anchor="nw", text=f"Capture: {ws['interface']}", fill="#38bdf8", font=("Consolas", 8, "bold"))
+        self.create_text(sx1 + 260, f_y1 + 4, anchor="nw", text=f"Display Filter: [ {ws['filter']} ]", fill="#a5f3fc", font=("Consolas", 8))
+        self.create_rectangle(sx2 - 70, f_y1 + 2, sx2 - 12, f_y2 - 2, fill="#0284c7", outline="")
+        self.create_text(sx2 - 58, f_y1 + 4, anchor="nw", text="Filter [OK]", fill="white", font=("Segoe UI", 7, "bold"))
+
+        # Packet Table Header
+        h_y1 = f_y2 + 4
+        h_y2 = h_y1 + 18
+        self.create_rectangle(sx1 + 8, h_y1, sx2 - 8, h_y2, fill="#16293a", outline="")
+        self.create_text(sx1 + 12, h_y1 + 3, anchor="nw", text="No.", fill="#f6d365", font=("Consolas", 8, "bold"))
+        self.create_text(sx1 + 46, h_y1 + 3, anchor="nw", text="Time", fill="#f6d365", font=("Consolas", 8, "bold"))
+        self.create_text(sx1 + 120, h_y1 + 3, anchor="nw", text="Source", fill="#f6d365", font=("Consolas", 8, "bold"))
+        self.create_text(sx1 + 240, h_y1 + 3, anchor="nw", text="Destination", fill="#f6d365", font=("Consolas", 8, "bold"))
+        self.create_text(sx1 + 370, h_y1 + 3, anchor="nw", text="Protocol", fill="#f6d365", font=("Consolas", 8, "bold"))
+        self.create_text(sx1 + 450, h_y1 + 3, anchor="nw", text="Packet Information (Click row to dissect)", fill="#f6d365", font=("Consolas", 8, "bold"))
+
+        # Packet Rows
+        max_rows = min(5, len(packets))
+        row_y = h_y2 + 2
+
+        for p_idx in range(max_rows):
+            pkt = packets[p_idx]
+            is_sel = (p_idx == self.selected_packet_idx)
+            r_bg = "#0369a1" if is_sel else ("#0f1c28" if p_idx % 2 == 0 else "#09121a")
+            r_fg = "white" if is_sel else "#dceaf4"
+            r_y1 = row_y + p_idx * 20
+            r_y2 = r_y1 + 18
+
+            self.create_rectangle(sx1 + 8, r_y1, sx2 - 8, r_y2, fill=r_bg, outline="#38bdf8" if is_sel else "")
+            self.create_text(sx1 + 12, r_y1 + 2, anchor="nw", text=pkt["no"], fill=r_fg, font=("Consolas", 8))
+            self.create_text(sx1 + 46, r_y1 + 2, anchor="nw", text=pkt["time"], fill=r_fg, font=("Consolas", 8))
+            self.create_text(sx1 + 120, r_y1 + 2, anchor="nw", text=pkt["src"], fill=r_fg, font=("Consolas", 8))
+            self.create_text(sx1 + 240, r_y1 + 2, anchor="nw", text=pkt["dst"], fill=r_fg, font=("Consolas", 8))
+            self.create_text(sx1 + 370, r_y1 + 2, anchor="nw", text=pkt["proto"], fill="#fde047" if pkt["proto"] in {"Modbus", "PN-DCP", "S7comm", "OPC-UA"} else r_fg, font=("Consolas", 8, "bold"))
+            self.create_text(sx1 + 450, r_y1 + 2, anchor="nw", text=pkt["info"], fill=r_fg, font=("Consolas", 8))
+
+            def make_pkt_selector(idx: int) -> Callable[[], None]:
+                return lambda: self.select_packet(idx)
+
+            self.canvas_buttons[f"pkt_row_{p_idx}"] = (sx1 + 8, r_y1, sx2 - 8, r_y2, make_pkt_selector(p_idx))
+
+        # Bottom Protocol Tree & Diagnostic Box
+        split_y = row_y + max_rows * 20 + 4
+        tree_w = int((sx2 - sx1 - 24) * 0.58)
+
+        # 1. Left: Protocol Dissection Pane
+        t_x1 = sx1 + 8
+        t_x2 = t_x1 + tree_w
+        self.create_rectangle(t_x1, split_y, t_x2, sy2 - 6, fill="#0a141e", outline="#1e3448", width=1)
+        self.create_rectangle(t_x1, split_y, t_x2, split_y + 18, fill="#122434", outline="")
+        self.create_text(t_x1 + 8, split_y + 3, anchor="nw", text="▼ PROTOCOL DISSECTION TREE (OSI LAYER 2 - 7)", fill="#64d8cb", font=("Consolas", 8, "bold"))
+
+        sel_pkt = packets[self.selected_packet_idx] if packets and self.selected_packet_idx < len(packets) else None
+        if sel_pkt:
+            detail_lines = sel_pkt.get("detail", "").splitlines()
+            curr_dy = split_y + 22
+            for d_line in detail_lines[:4]:
+                self.create_text(t_x1 + 10, curr_dy, anchor="nw", text=f"▶ {d_line}", fill="#dceaf4", font=("Consolas", 8))
+                curr_dy += 14
+
+        # 2. Right: Incident Analysis & Action Card
+        a_x1 = t_x2 + 8
+        a_x2 = sx2 - 8
+        self.create_rectangle(a_x1, split_y, a_x2, sy2 - 6, fill="#10202e", outline="#38bdf8", width=1)
+        self.create_rectangle(a_x1, split_y, a_x2, split_y + 18, fill="#162e42", outline="")
+        self.create_text(a_x1 + 8, split_y + 3, anchor="nw", text="🔍 INCIDENT RESPONSE HANDLINGSANBEFALING", fill="#f6d365", font=("Consolas", 8, "bold"))
+
+        r = self.engine.room
+        if r == "pumpehuset":
+            diag_txt = "Modbus FC 06 Overstyring detekteret mod VFD!\nReg 0x0000 sættes til 1337 -> 133.7 Bar overtryk."
+            btn_txt = "🛠️ Åbn SCALANCE WBM (DPI Regelsæt)"
+            btn_act = lambda: self.set_laptop_tab("scalance")
+        elif r == "ventil-oen":
+            diag_txt = "Layer 2 DCP-spoofing & Broadcast-storm detekteret!\nRogue Pi (b8:27:eb:d4:11:22) kaprer ventil-ø."
+            btn_txt = "🛡️ Åbn SCALANCE Switch (MRP / Port Sec)"
+            btn_act = lambda: self.set_laptop_tab("scalance")
+        elif r == "el-tavlen":
+            diag_txt = "Ubeskyttet S7comm på port 102 overskriver DB1!\nPUT/GET tilladt uden adgangskontrol."
+            btn_txt = "⚙️ Åbn TIA Portal V19 (Hærd CPU)"
+            btn_act = lambda: self.set_laptop_tab("tia")
+        elif r == "kontrolrummet":
+            diag_txt = "Ukrypteret OPC UA på port 4840 lækker procesdata!\nSecurityPolicy: None & Anonymous login aktiv."
+            btn_txt = "🔐 Åbn SCADA Sikkerhed (mTLS Cert)"
+            btn_act = lambda: self.set_laptop_tab("scada")
+        else:
+            diag_txt = "Enterprise adgangszone. Ingen aktive OT-angreb her.\nGå til produktionshallen for at undersøge zonerne."
+            btn_txt = "🚶 Gå til Pumpehuset"
+            btn_act = lambda: self.master_app.command("gå til pumpehuset")
+
+        self.create_text(a_x1 + 10, split_y + 24, anchor="nw", text=diag_txt, fill="#cbd5e1", font=("Segoe UI", 8))
+
+        # Action Button inside Wireshark
+        act_btn_y1 = sy2 - 34
+        act_btn_y2 = sy2 - 10
+        self.create_rectangle(a_x1 + 10, act_btn_y1, a_x2 - 10, act_btn_y2, fill="#0284c7", outline="#38bdf8", width=1)
+        self.create_text((a_x1 + a_x2) // 2, (act_btn_y1 + act_btn_y2) // 2, text=btn_txt, fill="white", font=("Segoe UI", 8, "bold"))
+        self.canvas_buttons["ws_quick_action"] = (a_x1 + 10, act_btn_y1, a_x2 - 10, act_btn_y2, btn_act)
+
+    def select_packet(self, idx: int) -> None:
+        self.selected_packet_idx = idx
+        self.draw()
+
+    # -------------------------------------------------------------------------
+    # TAB 2: SCALANCE WBM (WEB-BASED MANAGEMENT)
+    # -------------------------------------------------------------------------
+    def draw_laptop_scalance(self, sx1: int, sy1: int, sx2: int, sy2: int) -> None:
+        # Header
+        self.create_rectangle(sx1 + 8, sy1 + 6, sx2 - 8, sy1 + 32, fill="#132332", outline="#25425c", width=1)
+        self.create_text(sx1 + 14, sy1 + 12, anchor="nw", text="SIEMENS SCALANCE WBM (Web-Based Management V4.2.1) - Status: ONLINE", fill="#38bdf8", font=("Consolas", 9, "bold"))
+
+        r = self.engine.room
+        # 1. PUMPEHUSET / CHAPTER 1: S615 MODBUS DPI
+        if r == "pumpehuset" or self.engine.chapter == 1:
+            self.create_text(sx1 + 14, sy1 + 42, anchor="nw", text="SCALANCE S615 SECURITY ROUTER - DEEP PACKET INSPECTION (DPI)", fill="#f6d365", font=("Consolas", 10, "bold"))
+            self.create_text(sx1 + 14, sy1 + 60, anchor="nw", text="Conduit afgrænsning jf. IEC 62443-3-2: Filtrering på applikationslaget for Modbus TCP (Port 502)", fill="#94a3b8", font=("Segoe UI", 8))
+
+            # DPI Rule Table
+            tbl_y1 = sy1 + 82
+            self.create_rectangle(sx1 + 14, tbl_y1, sx2 - 14, tbl_y1 + 80, fill="#0a141e", outline="#1e3448", width=1)
+            self.create_rectangle(sx1 + 14, tbl_y1, sx2 - 14, tbl_y1 + 20, fill="#16293a", outline="")
+            self.create_text(sx1 + 20, tbl_y1 + 4, anchor="nw", text="Funktionskode (FC)", fill="#f6d365", font=("Consolas", 8, "bold"))
+            self.create_text(sx1 + 180, tbl_y1 + 4, anchor="nw", text="Operation", fill="#f6d365", font=("Consolas", 8, "bold"))
+            self.create_text(sx1 + 340, tbl_y1 + 4, anchor="nw", text="Mål-register", fill="#f6d365", font=("Consolas", 8, "bold"))
+            self.create_text(sx1 + 480, tbl_y1 + 4, anchor="nw", text="DPI Handling", fill="#f6d365", font=("Consolas", 8, "bold"))
+
+            # Rules
+            rules = [
+                ("FC 03", "Read Holding Registers", "Reg 40001 (Driftstryk)", "ACCEPT (TILLAD)", "#22c55e"),
+                ("FC 06", "Write Single Register", "Reg 40001 (Setpunkt)", "DROP (BLOKER)", "#ef4444"),
+                ("FC 16", "Write Multiple Registers", "Alle registre", "DROP (BLOKER)", "#ef4444"),
+            ]
+            for ri, (fc, op, reg, act, col) in enumerate(rules):
+                ry = tbl_y1 + 24 + ri * 18
+                self.create_text(sx1 + 20, ry, anchor="nw", text=fc, fill="white", font=("Consolas", 8))
+                self.create_text(sx1 + 180, ry, anchor="nw", text=op, fill="#cbd5e1", font=("Consolas", 8))
+                self.create_text(sx1 + 340, ry, anchor="nw", text=reg, fill="#cbd5e1", font=("Consolas", 8))
+                self.create_text(sx1 + 480, ry, anchor="nw", text=f"● {act}", fill=col, font=("Consolas", 8, "bold"))
+
+            # Status Banner & Action Buttons
+            status_y = tbl_y1 + 95
+            is_c1_done = "chapter-1-done" in self.engine.flags
+            stat_col = "#22c55e" if is_c1_done else "#ef4444"
+            stat_msg = "✅ S615 DPI AKTIV: Modbus FC 06 blokeres i real-tid. Driftstryk: 42.0 Bar." if is_c1_done else "⚠️ UBESKYTTET: VFD modtager uautoriseret FC 06 overstyring! Aktivér DPI regelsæt."
+            self.create_text(sx1 + 14, status_y, anchor="nw", text=stat_msg, fill=stat_col, font=("Consolas", 9, "bold"))
+
+            # Button 1: Activate DPI Rules
+            b1_x1, b1_x2 = sx1 + 14, sx1 + 380
+            b1_y1, b1_y2 = status_y + 22, status_y + 54
+            self.create_rectangle(b1_x1, b1_y1, b1_x2, b1_y2, fill="#059669", outline="#34d399", width=1)
+            self.create_text((b1_x1 + b1_x2) // 2, (b1_y1 + b1_y2) // 2, text="💾 1. Aktivér Modbus DPI Regelsæt på S615", fill="white", font=("Segoe UI", 9, "bold"))
+            self.canvas_buttons["sc_act_dpi"] = (b1_x1, b1_y1, b1_x2, b1_y2, lambda: self.master_app.command("konfigurer firewall på frekvensomformer"))
+
+            # Button 2: DIN-Mount Workbench
+            b2_x1, b2_x2 = b1_x2 + 12, sx2 - 14
+            self.create_rectangle(b2_x1, b1_y1, b2_x2, b1_y2, fill="#0284c7", outline="#38bdf8", width=1)
+            self.create_text((b2_x1 + b2_x2) // 2, (b1_y1 + b1_y2) // 2, text="🛠️ 2. Åbn DIN-Montage i El-tavlen", fill="white", font=("Segoe UI", 9, "bold"))
+            self.canvas_buttons["sc_vfd_bench"] = (b2_x1, b1_y1, b2_x2, b1_y2, self.master_app.switch_to_vfd_workbench)
+
+        # 2. VENTIL-ØEN / CHAPTER 2: SCALANCE XB-200 SWITCH
+        elif r == "ventil-oen" or self.engine.chapter == 2:
+            self.create_text(sx1 + 14, sy1 + 42, anchor="nw", text="SCALANCE XB-200 MANAGED INDUSTRIAL SWITCH - REDUNDANS & PORT SECURITY", fill="#f6d365", font=("Consolas", 10, "bold"))
+            self.create_text(sx1 + 14, sy1 + 60, anchor="nw", text="Layer 2 beskyttelse jf. IEC 62439-2 (MRP Ring) & IEC 62443-3-3 (Port Security mod DCP-kapring)", fill="#94a3b8", font=("Segoe UI", 8))
+
+            info_y = sy1 + 82
+            self.create_rectangle(sx1 + 14, info_y, sx2 - 14, info_y + 80, fill="#0a141e", outline="#1e3448", width=1)
+            self.create_text(sx1 + 24, info_y + 12, anchor="nw", text="Media Redundancy Protocol (MRP):  [ RING MANAGER ]  (<200ms bumpless failover)", fill="#4ade80", font=("Consolas", 8, "bold"))
+            self.create_text(sx1 + 24, info_y + 32, anchor="nw", text="PROFINET RT Port Binding:          [ PORT 1 & 2 ]    (Festo ET 200SP redundant ring)", fill="#cbd5e1", font=("Consolas", 8))
+            self.create_text(sx1 + 24, info_y + 52, anchor="nw", text="802.1X / MAC Port Security:        [ ACTIVE / LOCKED ] (Rogue MAC b8:27:eb:d4:11:22 afvist)", fill="#38bdf8", font=("Consolas", 8, "bold"))
+
+            status_y = info_y + 95
+            is_c2_done = "chapter-2-done" in self.engine.flags
+            stat_col = "#22c55e" if is_c2_done else "#ef4444"
+            stat_msg = "✅ SCALANCE XB-200 AKTIV: PROFINET determinisme genoprettet via MRP-ring." if is_c2_done else "⚠️ UNMANAGED D-LINK: Broadcast storm oversvømmer bussen. Udskift med SCALANCE XB-200!"
+            self.create_text(sx1 + 14, status_y, anchor="nw", text=stat_msg, fill=stat_col, font=("Consolas", 9, "bold"))
+
+            b1_x1, b1_x2 = sx1 + 14, sx1 + 380
+            b1_y1, b1_y2 = status_y + 22, status_y + 54
+            self.create_rectangle(b1_x1, b1_y1, b1_x2, b1_y2, fill="#0f766e", outline="#2dd4bf", width=1)
+            self.create_text((b1_x1 + b1_x2) // 2, (b1_y1 + b1_y2) // 2, text="🔄 1. Monter SCALANCE Switch & Forbind MRP", fill="white", font=("Segoe UI", 9, "bold"))
+            self.canvas_buttons["sc_act_switch"] = (b1_x1, b1_y1, b1_x2, b1_y2, lambda: self.master_app.command("udskift switch med scalance"))
+
+            b2_x1, b2_x2 = b1_x2 + 12, sx2 - 14
+            self.create_rectangle(b2_x1, b1_y1, b2_x2, b1_y2, fill="#0284c7", outline="#38bdf8", width=1)
+            self.create_text((b2_x1 + b2_x2) // 2, (b1_y1 + b1_y2) // 2, text="🛠️ 2. Åbn Switch Montage-arbejdsbænk", fill="white", font=("Segoe UI", 9, "bold"))
+            self.canvas_buttons["sc_switch_bench"] = (b2_x1, b1_y1, b2_x2, b1_y2, self.master_app.switch_to_switch_workbench)
+
+        # 3. IDMZ / CHAPTER 4
+        else:
+            self.create_text(sx1 + 14, sy1 + 42, anchor="nw", text="SCALANCE IDMZ CONDUIT PERIMETER (ZONEMODEL LEVEL 3.5)", fill="#f6d365", font=("Consolas", 10, "bold"))
+            self.create_text(sx1 + 14, sy1 + 60, anchor="nw", text="Industriel DMZ beskyttelse mod uautoriserede skyforbindelser og ukrypteret telemetri", fill="#94a3b8", font=("Segoe UI", 8))
+
+            b1_x1, b1_x2 = sx1 + 14, sx1 + 380
+            b1_y1, b1_y2 = sy1 + 95, sy1 + 130
+            self.create_rectangle(b1_x1, b1_y1, b1_x2, b1_y2, fill="#059669", outline="#34d399", width=1)
+            self.create_text((b1_x1 + b1_x2) // 2, (b1_y1 + b1_y2) // 2, text="🔐 Hærd OPC UA: Basic256Sha256 & X.509", fill="white", font=("Segoe UI", 9, "bold"))
+            self.canvas_buttons["sc_act_opc"] = (b1_x1, b1_y1, b1_x2, b1_y2, lambda: self.master_app.command("brug certifikat på opc ua server"))
+
+    # -------------------------------------------------------------------------
+    # TAB 3: TIA PORTAL V19 SIMULATOR
+    # -------------------------------------------------------------------------
+    def draw_laptop_tia(self, sx1: int, sy1: int, sx2: int, sy2: int) -> None:
+        # Header
+        self.create_rectangle(sx1 + 8, sy1 + 6, sx2 - 8, sy1 + 32, fill="#132332", outline="#25425c", width=1)
+        self.create_text(sx1 + 14, sy1 + 12, anchor="nw", text="Totally Integrated Automation Portal V19 - Nordic_H2O_Plant_Security.ap19", fill="#38bdf8", font=("Consolas", 9, "bold"))
+
+        # Left Project Tree (25% width)
+        tree_w = 200
+        tx1 = sx1 + 8
+        tx2 = tx1 + tree_w
+        ty1 = sy1 + 36
+        ty2 = sy2 - 6
+
+        self.create_rectangle(tx1, ty1, tx2, ty2, fill="#0a131c", outline="#1e3448", width=1)
+        self.create_rectangle(tx1, ty1, tx2, ty1 + 20, fill="#16293a", outline="")
+        self.create_text(tx1 + 8, ty1 + 4, anchor="nw", text="PROJEKTTRÆ", fill="#f6d365", font=("Consolas", 8, "bold"))
+
+        tree_items = [
+            "▼ Nordic_H2O_Plant",
+            "  ▼ CPU 1516F-3 PN/DP",
+            "    ► Device configuration [AKTIV]",
+            "    ► Online & diagnostics",
+            "    ► Program blocks (DB1)",
+            "    ► PLC tags & Safety",
+        ]
+        for idx, item in enumerate(tree_items):
+            self.create_text(tx1 + 8, ty1 + 26 + idx * 16, anchor="nw", text=item, fill="#38bdf8" if "AKTIV" in item else "#cbd5e1", font=("Consolas", 8))
+
+        # Right Device Configuration Pane
+        dx1 = tx2 + 8
+        dx2 = sx2 - 8
+        self.create_rectangle(dx1, ty1, dx2, ty2, fill="#0e1b26", outline="#1e3448", width=1)
+        self.create_rectangle(dx1, ty1, dx2, ty1 + 20, fill="#16293a", outline="")
+        self.create_text(dx1 + 10, ty1 + 4, anchor="nw", text="SIEMENS S7-1500 (CPU 1516F) - BESKYTTELSE & SIKKERHED (IEC 62443-4-2)", fill="#64d8cb", font=("Consolas", 8, "bold"))
+
+        # Form Controls Representation
+        cy = ty1 + 28
+        self.create_text(dx1 + 14, cy, anchor="nw", text="1. Adgangsniveau & Rettigheder:", fill="#f6d365", font=("Segoe UI", 9, "bold"))
+        cy += 18
+        self.create_text(dx1 + 24, cy, anchor="nw", text="○ Fuld adgang uden adgangskode (Ubeskyttet - SÅRBAR)", fill="#ef4444", font=("Segoe UI", 8))
+        cy += 16
+        self.create_text(dx1 + 24, cy, anchor="nw", text="○ Læseadgang (HMI beskyttet)", fill="#cbd5e1", font=("Segoe UI", 8))
+        cy += 16
+        is_c3_done = "chapter-3-done" in self.engine.flags
+        self.create_text(dx1 + 24, cy, anchor="nw", text="● Fuld beskyttelse inkl. Failsafe (Anbefalet)", fill="#22c55e" if is_c3_done else "#38bdf8", font=("Segoe UI", 8, "bold"))
+
+        cy += 24
+        self.create_text(dx1 + 14, cy, anchor="nw", text="2. Forbindelsesmekanismer (Port 102):", fill="#f6d365", font=("Segoe UI", 9, "bold"))
+        cy += 18
+        put_txt = "[   ] Deaktiveret: Tillad IKKE PUT/GET fra fjernpartner (Sikret)" if is_c3_done else "[ X ] Tillad PUT/GET-kommunikation fra fjernpartner (Port 102 Åben!)"
+        put_col = "#22c55e" if is_c3_done else "#ef4444"
+        self.create_text(dx1 + 24, cy, anchor="nw", text=put_txt, fill=put_col, font=("Consolas", 8, "bold"))
+
+        cy += 24
+        has_backup = "backup-taken" in self.engine.flags
+        backup_stat = "✅ Verificeret offline backup til USB gemt" if has_backup else "⚠️ Mangler USB-backup (Krav forud for ændringer jf. Artikel 21.2.c)"
+        backup_col = "#22c55e" if has_backup else "#f59e0b"
+        self.create_text(dx1 + 14, cy, anchor="nw", text=f"3. Driftskontinuitet: {backup_stat}", fill=backup_col, font=("Segoe UI", 8, "bold"))
+
+        # Action Buttons
+        btn_y = ty2 - 36
+        if self.engine.plc_defect_stop:
+            self.create_rectangle(dx1 + 14, btn_y, dx2 - 14, btn_y + 30, fill="#7f1d1d", outline="#ef4444", width=1)
+            self.create_text((dx1 + dx2) // 2, btn_y + 15, text="💾 Gendan DB1 & Projekt fra autoriseret USB-Backup", fill="white", font=("Segoe UI", 9, "bold"))
+            self.canvas_buttons["tia_restore_db1"] = (dx1 + 14, btn_y, dx2 - 14, btn_y + 30, lambda: self.master_app.command("gendan plc db1"))
+        else:
+            b1_w = (dx2 - dx1 - 36) // 2
+            b1_x1 = dx1 + 14
+            b1_x2 = b1_x1 + b1_w
+            self.create_rectangle(b1_x1, btn_y, b1_x2, btn_y + 30, fill="#0f766e", outline="#2dd4bf", width=1)
+            self.create_text((b1_x1 + b1_x2) // 2, btn_y + 15, text="💾 1. Gem USB-Backup", fill="white", font=("Segoe UI", 9, "bold"))
+            self.canvas_buttons["tia_backup"] = (b1_x1, btn_y, b1_x2, btn_y + 30, lambda: self.master_app.command("tag backup"))
+
+            b2_x1 = b1_x2 + 12
+            b2_x2 = dx2 - 14
+            self.create_rectangle(b2_x1, btn_y, b2_x2, btn_y + 30, fill="#0284c7", outline="#38bdf8", width=1)
+            self.create_text((b2_x1 + b2_x2) // 2, btn_y + 15, text="📥 2. Download Config & RUN", fill="white", font=("Segoe UI", 9, "bold"))
+            self.canvas_buttons["tia_download"] = (b2_x1, btn_y, b2_x2, btn_y + 30, lambda: self.master_app.command("brug tia portal på s7-1500"))
+
+    # -------------------------------------------------------------------------
+    # TAB 4: WINCC SCADA & NIS2 TELEMETRI
+    # -------------------------------------------------------------------------
+    def draw_laptop_scada(self, sx1: int, sy1: int, sx2: int, sy2: int) -> None:
+        # Header
+        self.create_rectangle(sx1 + 8, sy1 + 6, sx2 - 8, sy1 + 32, fill="#132332", outline="#25425c", width=1)
+        self.create_text(sx1 + 14, sy1 + 12, anchor="nw", text="WinCC SCADA Runtime & NIS2 Artikel 21 Telemetri Dashboard", fill="#38bdf8", font=("Consolas", 9, "bold"))
+
+        half_w = (sx2 - sx1 - 24) // 2
+        # Left 50%: Live Process Mimic
+        mx1 = sx1 + 8
+        mx2 = mx1 + half_w
+        my1 = sy1 + 36
+        my2 = sy2 - 6
+
+        self.create_rectangle(mx1, my1, mx2, my2, fill="#0a141e", outline="#1e3448", width=1)
+        self.create_rectangle(mx1, my1, mx2, my1 + 20, fill="#16293a", outline="")
+        self.create_text(mx1 + 10, my1 + 4, anchor="nw", text="P&ID PROCES MIMIC (LIVE TELEMETRI)", fill="#64d8cb", font=("Consolas", 8, "bold"))
+
+        status_info = self.engine.get_process_status()
+
+        # Manometer Gauge
+        gx = mx1 + 75
+        gy = my1 + 85
+        rad = 32
+        self.create_oval(gx - rad, gy - rad, gx + rad, gy + rad, fill="#0d1822", outline="#475569", width=2)
+        # Sectors: green (0-60), yellow (60-100), red (100-150)
+        self.create_arc(gx - rad + 3, gy - rad + 3, gx + rad - 3, gy + rad - 3, start=225, extent=-108, outline="#22c55e", width=3, style="arc")
+        self.create_arc(gx - rad + 3, gy - rad + 3, gx + rad - 3, gy + rad - 3, start=117, extent=-72, outline="#f59e0b", width=3, style="arc")
+        self.create_arc(gx - rad + 3, gy - rad + 3, gx + rad - 3, gy + rad - 3, start=45, extent=-90, outline="#ef4444", width=3, style="arc")
+
+        p_val = status_info["pump_pressure"]
+        angle_deg = 135.0 + (p_val / 150.0) * 270.0
+        if "chapter-1-done" not in self.engine.flags and not status_info["breaker_tripped"]:
+            angle_deg += math.sin(self.anim_tick * 1.5) * 5.0
+        needle_rad = math.radians(angle_deg)
+        nx = gx + int(24 * math.cos(needle_rad))
+        ny = gy + int(24 * math.sin(needle_rad))
+        p_col = "#22c55e" if "chapter-1-done" in self.engine.flags else "#ef4444"
+        self.create_line(gx, gy, nx, ny, fill=p_col, width=2, capstyle="round")
+        self.create_oval(gx - 3, gy - 3, gx + 3, gy + 3, fill="#cbd5e1", outline="#0a1218")
+
+        self.create_text(gx + rad + 16, gy - 20, anchor="nw", text="PUMPE 2 TRYKMÅLING:", fill="#f6d365", font=("Consolas", 8, "bold"))
+        self.create_text(gx + rad + 16, gy - 4, anchor="nw", text=status_info["pump_status"], fill=p_col, font=("Consolas", 8))
+        self.create_text(gx + rad + 16, gy + 14, anchor="nw", text="VENTIL-Ø PROFINET:", fill="#f6d365", font=("Consolas", 8, "bold"))
+        v_col = "#22c55e" if "chapter-2-done" in self.engine.flags else "#ef4444"
+        self.create_text(gx + rad + 16, gy + 28, anchor="nw", text=status_info["valve_status"], fill=v_col, font=("Consolas", 8))
+
+        # Bottom Subsystem Readouts
+        by = gy + rad + 24
+        self.create_text(mx1 + 14, by, anchor="nw", text="S7-1500 PLC Mode:  " + status_info["plc_status"], fill="#cbd5e1", font=("Consolas", 8))
+        self.create_text(mx1 + 14, by + 18, anchor="nw", text="OPC UA Sikkerhed:  " + status_info["opc_status"], fill="#cbd5e1", font=("Consolas", 8))
+
+        # Right 50%: NIS2 Compliance Matrix
+        nx1 = mx2 + 8
+        nx2 = sx2 - 8
+        self.create_rectangle(nx1, my1, nx2, my2, fill="#0e1a24", outline="#1e3448", width=1)
+        self.create_rectangle(nx1, my1, nx2, my1 + 20, fill="#16293a", outline="")
+        self.create_text(nx1 + 10, my1 + 4, anchor="nw", text="NIS2 & IEC 62443 OVERENSSTEMMELSESSTATUS", fill="#f6d365", font=("Consolas", 8, "bold"))
+
+        # Overall Progress Bar
+        pct = status_info["compliance_pct"]
+        self.create_text(nx1 + 14, my1 + 28, anchor="nw", text=f"Samlet Efterlevelse: {pct}% jf. EU 2022/2555", fill="white", font=("Segoe UI", 9, "bold"))
+        bar_x1 = nx1 + 14
+        bar_x2 = nx2 - 14
+        bar_y1 = my1 + 48
+        bar_y2 = bar_y1 + 14
+        self.create_rectangle(bar_x1, bar_y1, bar_x2, bar_y2, fill="#0a1218", outline="#334155")
+        fill_w = int((bar_x2 - bar_x1) * (pct / 100.0))
+        if fill_w > 0:
+            self.create_rectangle(bar_x1, bar_y1, bar_x1 + fill_w, bar_y2, fill="#22c55e", outline="")
+
+        # Requirements list
+        reqs = [
+            ("Art. 21.2.a", "Risikoanalyse & Netværkszoner", "chapter-1-done" in self.engine.flags),
+            ("Art. 21.2.b", "Hændelseshåndtering & Detektion", "chapter-2-done" in self.engine.flags),
+            ("Art. 21.2.c", "Driftskontinuitet & USB-Backup", "chapter-3-done" in self.engine.flags),
+            ("Art. 21.2.d", "Netværkssikkerhed & Conduits", "chapter-1-done" in self.engine.flags and "chapter-2-done" in self.engine.flags),
+            ("Art. 21.2.h", "Kryptografi & mTLS i IDMZ", "chapter-4-done" in self.engine.flags),
+        ]
+
+        ry = bar_y2 + 10
+        for code, label, is_ok in reqs:
+            mark = "✅" if is_ok else "❌"
+            m_col = "#22c55e" if is_ok else "#ef4444"
+            self.create_text(nx1 + 14, ry, anchor="nw", text=f"{mark} {code}: {label}", fill=m_col, font=("Segoe UI", 8))
+            ry += 15
+
+        # Chapter 5 Presentation Button
+        if self.engine.chapter == 5 or pct >= 100:
+            audit_btn_y = my2 - 34
+            self.create_rectangle(nx1 + 14, audit_btn_y, nx2 - 14, audit_btn_y + 28, fill="#059669", outline="#34d399", width=1)
+            self.create_text((nx1 + nx2) // 2, audit_btn_y + 14, text="🏆 Fremlæg Dokumentation for Revisor Kirsten", fill="white", font=("Segoe UI", 9, "bold"))
+            self.canvas_buttons["scada_audit"] = (nx1 + 14, audit_btn_y, nx2 - 14, audit_btn_y + 28, self.master_app.complete_audit)
+
+    # =========================================================================
+    # 4. IN-CANVAS DIN-RAIL WORKBENCH (CHAPTER 1)
+    # =========================================================================
+    def draw_vfd_workbench(self, w: int, h: int) -> None:
+        self.create_rectangle(0, 0, w, h, fill="#0e1722", outline="")
+        for y_ch in range(25, h, 40):
+            self.create_line(0, y_ch, w, y_ch, fill="#162534", width=1)
+
+        self.create_rectangle(0, 0, w, 44, fill="#122434", outline="#25425c", width=1)
+        self.create_text(
+            20, 10, anchor="nw",
+            text="TAVLE-MONTAGE: SINAMICS VFD & SCALANCE S615 CONDUIT (IEC 62443-3-2)",
+            fill="#f6d365", font=("Consolas", 12, "bold"),
+        )
+        self.create_text(
+            20, 27, anchor="nw",
+            text="Klik på enhederne eller benyt handlingsknapperne forneden for at montere og patche",
+            fill="#9cbcd4", font=("Segoe UI", 8),
+        )
+
+        btn_close_x1, btn_close_x2 = w - 170, w - 16
+        self.create_rectangle(btn_close_x1, 8, btn_close_x2, 34, fill="#1e3448", outline="#38bdf8", width=1)
+        self.create_text(btn_close_x1 + 12, 14, anchor="nw", text="🔙 Tilbage til rum", fill="#dceaf4", font=("Segoe UI", 9, "bold"))
+        self.canvas_buttons["vfd_btn_close"] = (btn_close_x1, 8, btn_close_x2, 34, self.master_app.switch_to_room_view)
+
+        # DIN Rail
+        rail_y1 = 125
+        rail_y2 = 157
+        self.create_rectangle(15, rail_y1, w - 15, rail_y2, fill="#526477", outline="#8fa2b4", width=2)
+        for rx in range(30, w - 25, 24):
+            self.create_rectangle(rx, rail_y1 + 8, rx + 12, rail_y2 - 8, fill="#2b3b4a", outline="#6c8094")
+
+        # VFD on Right
+        v_w = 260
+        v_x1 = max(450, w - v_w - 40)
+        v_y1 = 55
+        v_x2 = v_x1 + v_w
+        v_y2 = min(h - 35, 275)
+
+        self.create_rectangle(v_x1, v_y1, v_x2, v_y2, fill="#182533", outline="#3b82f6", width=2)
+        self.create_rectangle(v_x1, v_y1, v_x2, v_y1 + 24, fill="#0284c7", outline="")
+        self.create_text(v_x1 + 10, v_y1 + 5, anchor="nw", text="SIEMENS SINAMICS G120", fill="white", font=("Consolas", 9, "bold"))
+
+        vfd_status_color = "#22c55e" if self.vfd_step >= 3 else "#ef4444"
+        vfd_status_txt = "42.0 BAR - OK" if self.vfd_step >= 3 else "133.7 BAR - ALARM!"
+        self.create_rectangle(v_x1 + 10, v_y1 + 32, v_x2 - 10, v_y1 + 68, fill="#0a1219", outline=vfd_status_color, width=1)
+        self.create_text(v_x1 + 16, v_y1 + 36, anchor="nw", text=f"TRYK: {vfd_status_txt}", fill=vfd_status_color, font=("Consolas", 9, "bold"))
+        sub_stat = "50.0 Hz | CONDUIT AKTIV" if self.vfd_step >= 3 else "FC 06 OVERRULE AKTIV!"
+        self.create_text(v_x1 + 16, v_y1 + 50, anchor="nw", text=sub_stat, fill="#94a3b8", font=("Consolas", 8))
+
+        # Manometer Needle
+        mx = v_x1 + 55
+        my = v_y1 + 120
+        rad_gauge = 28
+        self.create_oval(mx - rad_gauge, my - rad_gauge, mx + rad_gauge, my + rad_gauge, fill="#0a1218", outline="#64748b", width=2)
+        p_val = 42.0 if self.vfd_step >= 3 else 133.7
+        angle_deg = 135.0 + (p_val / 150.0) * 270.0
+        if self.vfd_step < 3:
+            angle_deg += math.sin(self.anim_tick * 1.6) * 6.0
+        needle_rad = math.radians(angle_deg)
+        nx = mx + int(20 * math.cos(needle_rad))
+        ny = my + int(20 * math.sin(needle_rad))
+        self.create_line(mx, my, nx, ny, fill=vfd_status_color, width=2, capstyle="round")
+        self.create_oval(mx - 3, my - 3, mx + 3, my + 3, fill="#cbd5e1", outline="#0a1218")
+
+        # VFD LAN Port
+        vfd_port_x = v_x1 + 150
+        vfd_port_y = v_y1 + 95
+        self.create_rectangle(vfd_port_x, vfd_port_y, vfd_port_x + 60, vfd_port_y + 40, fill="#0b1520", outline="#64748b", width=1)
+        self.create_text(vfd_port_x + 6, vfd_port_y + 4, anchor="nw", text="LAN RJ45", fill="#cbd5e1", font=("Consolas", 7, "bold"))
+        self.hotspot_rects["vfd_port"] = (vfd_port_x, vfd_port_y, vfd_port_x + 60, vfd_port_y + 40)
+
+        # SCALANCE S615 on Left
+        s_w = 230
+        s_x1 = 50
+        s_y1 = 55
+        s_x2 = s_x1 + s_w
+        s_y2 = min(h - 35, 275)
+
+        if self.vfd_step == 0:
+            self.create_rectangle(s_x1, s_y1, s_x2, s_y2, fill="#12202d", outline="#f6d365", width=2, dash=(6, 4))
+            self.create_text(
+                s_x1 + 18, s_y1 + 40, anchor="nw",
+                text="[LEDIG DIN-PLADS]\n\nKlik for at montere\nSiemens SCALANCE S615\nsikkerhedsrouteren her.",
+                fill="#f6d365", font=("Segoe UI", 10, "bold"), justify="center",
+            )
+            self.hotspot_rects["vfd_step1_mount"] = (s_x1, s_y1, s_x2, s_y2)
+        else:
+            self.create_rectangle(s_x1, s_y1, s_x2, s_y2, fill="#142433", outline="#38bdf8", width=2)
+            self.create_rectangle(s_x1, s_y1, s_x2, s_y1 + 24, fill="#0369a1", outline="")
+            self.create_text(s_x1 + 10, s_y1 + 5, anchor="nw", text="SIEMENS SCALANCE S615", fill="white", font=("Consolas", 9, "bold"))
+
+            dpi_mode_txt = "DPI: TILLAD FC 03 | DROP FC 06" if self.vfd_step >= 3 else ("KLAR: AFVENTER REGELSÆT" if self.vfd_step == 2 else "STAND-BY: AFVENTER KABEL")
+            self.create_text(s_x1 + 16, s_y1 + 50, anchor="nw", text=dpi_mode_txt, fill="#38bdf8", font=("Consolas", 8, "bold"))
+            self.hotspot_rects["vfd_step3_dpi"] = (s_x1 + 10, s_y1 + 32, s_x2 - 10, s_y1 + 65)
+
+            lan_p1_x = s_x1 + 15
+            port_y = v_y1 + 100
+            self.create_rectangle(lan_p1_x, port_y, lan_p1_x + 42, port_y + 36, fill="#0a1520", outline="#38bdf8", width=1)
+            self.create_text(lan_p1_x + 4, port_y + 4, anchor="nw", text="P1-LAN", fill="#38bdf8", font=("Consolas", 7, "bold"))
+            self.hotspot_rects["vfd_step2_cable"] = (lan_p1_x, port_y, lan_p1_x + 42, port_y + 36)
+
+        if self.vfd_step == 1:
+            arrow_col = "#f6d365" if self.anim_tick % 2 == 0 else "#eab308"
+            self.create_line(s_x1 + 36, v_y1 + 136, vfd_port_x + 30, vfd_port_y + 20, fill=arrow_col, width=3, dash=(6, 4))
+            self.hotspot_rects["vfd_cable_arrow"] = (s_x1 + 36, v_y1 + 70, vfd_port_x + 30, v_y1 + 140)
+        elif self.vfd_step >= 2:
+            p1_cx = s_x1 + 36
+            p1_cy = v_y1 + 136
+            vfd_cx = vfd_port_x + 30
+            vfd_cy = vfd_port_y + 40
+            bend_y = min(h - 38, 250)
+            self.create_line(p1_cx, p1_cy, p1_cx, bend_y, vfd_cx, bend_y, vfd_cx, vfd_cy, fill="#2dd4bf", width=5, capstyle="round", joinstyle="round")
+
+        footer_y = h - 26
+        self.create_rectangle(0, footer_y, w, h, fill="#081018", outline="#1c3347", width=1)
+        if self.vfd_step == 0:
+            step_txt = "▶ TRIN 1 AF 3: Tag SCALANCE S615 ud af kassen og monter på DIN-skinnen (Klik på slotten)"
+        elif self.vfd_step == 1:
+            step_txt = "▶ TRIN 2 AF 3: Forbind skærmet RJ45 patchkabel fra SCALANCE LAN P1 til Frekvensomformeren"
+        elif self.vfd_step == 2:
+            step_txt = "▶ TRIN 3 AF 3: Aktivér Deep Packet Inspection (DPI) regelsæt (Tillad FC 03, Bloker FC 06)"
+        else:
+            step_txt = "✅ FULDFØRT: Frekvensomformeren er sikret bag SCALANCE S615! Klik forneden for at vende tilbage."
+        self.create_text(20, footer_y + 4, anchor="nw", text=step_txt, fill="#f6d365", font=("Consolas", 9, "bold"))
+
+    def on_vfd_workbench_click(self, hotspot_name: str) -> None:
+        if hotspot_name in {"vfd_step1_mount"} and self.vfd_step == 0:
+            self.master_app.do_vfd_step_1()
+        elif hotspot_name in {"vfd_step2_cable", "vfd_port", "vfd_cable_arrow"} and self.vfd_step == 1:
+            self.master_app.do_vfd_step_2()
+        elif hotspot_name in {"vfd_step3_dpi"} and self.vfd_step == 2:
+            self.master_app.do_vfd_step_3()
+        elif self.vfd_step >= 3:
+            self.master_app.switch_to_room_view()
+
+    # =========================================================================
+    # 5. IN-CANVAS SWITCH & VENTIL-Ø WORKBENCH (CHAPTER 2)
+    # =========================================================================
+    def draw_switch_workbench(self, w: int, h: int) -> None:
+        self.create_rectangle(0, 0, w, h, fill="#0b141e", outline="")
+        for y_ch in range(25, h, 40):
+            self.create_line(0, y_ch, w, y_ch, fill="#132230", width=1)
+
+        self.create_rectangle(0, 0, w, 44, fill="#102232", outline="#25425c", width=1)
+        self.create_text(
+            20, 10, anchor="nw",
+            text="VENTIL-Ø & SWITCH MONTAGE (IEC 62443-3-3 & IEC 62439-2 MRP REDUNDANS)",
+            fill="#f6d365", font=("Consolas", 12, "bold"),
+        )
+        self.create_text(
+            20, 27, anchor="nw",
+            text="Frakobl rogue udstyr og udskift med SCALANCE managed switch med MRP-ring og Port Security",
+            fill="#9cbcd4", font=("Segoe UI", 8),
+        )
+
+        btn_close_x1, btn_close_x2 = w - 170, w - 16
+        self.create_rectangle(btn_close_x1, 8, btn_close_x2, 34, fill="#1e3448", outline="#38bdf8", width=1)
+        self.create_text(btn_close_x1 + 12, 14, anchor="nw", text="🔙 Tilbage til rum", fill="#dceaf4", font=("Segoe UI", 9, "bold"))
+        self.canvas_buttons["switch_btn_close"] = (btn_close_x1, 8, btn_close_x2, 34, self.master_app.switch_to_room_view)
+
+        # ET 200SP on Left
+        f_w = 280
+        fx1 = 40
+        fy1 = 55
+        fx2 = fx1 + f_w
+        fy2 = min(h - 35, 275)
+
+        self.create_rectangle(fx1, fy1, fx2, fy2, fill="#152433", outline="#0284c7", width=2)
+        self.create_rectangle(fx1, fy1, fx2, fy1 + 24, fill="#0369a1", outline="")
+        self.create_text(fx1 + 10, fy1 + 5, anchor="nw", text="FESTO VENTIL-Ø (ET 200SP I/O)", fill="white", font=("Consolas", 9, "bold"))
+
+        et_col = "#22c55e" if self.switch_step >= 3 else "#ef4444"
+        dcp_name_txt = "et200sp-v01 (LÅST)" if self.switch_step >= 3 else "rogue-io (KAPRET!)"
+        self.create_rectangle(fx1 + 10, fy1 + 32, fx2 - 10, fy1 + 68, fill="#09121a", outline=et_col, width=1)
+        self.create_text(fx1 + 16, fy1 + 36, anchor="nw", text=f"NAME: {dcp_name_txt}", fill=et_col, font=("Consolas", 8, "bold"))
+
+        # Switch Rack on Right
+        s_w = 320
+        sx1 = max(400, w - s_w - 40)
+        sy1 = 55
+        sx2 = sx1 + s_w
+        sy2 = min(h - 35, 275)
+
+        if self.switch_step < 2:
+            self.create_rectangle(sx1, sy1, sx2, sy2, fill="#1c2834", outline="#ef4444", width=2)
+            self.create_rectangle(sx1, sy1, sx2, sy1 + 24, fill="#b91c1c", outline="")
+            self.create_text(sx1 + 10, sy1 + 5, anchor="nw", text="D-LINK DES-1008D (UNMANAGED SWITCH)", fill="white", font=("Consolas", 9, "bold"))
+
+            pi_x1 = sx1 + 20
+            pi_y1 = sy1 + 105
+            pi_x2 = sx2 - 20
+            pi_y2 = pi_y1 + 75
+
+            if "pi-removed" not in self.engine.flags:
+                self.create_rectangle(pi_x1, pi_y1, pi_x2, pi_y2, fill="#14532d", outline="#ef4444", width=2)
+                self.create_text(pi_x1 + 10, pi_y1 + 8, anchor="nw", text="⚠️ ROGUE RASPBERRY PI 4 (Kabelbakke)", fill="#fee2e2", font=("Consolas", 8, "bold"))
+                self.create_text(pi_x1 + 10, pi_y1 + 45, anchor="nw", text="▶ KLIK HER FOR AT FRAKOBLE ROGUE ENHED ◀", fill="#fde047", font=("Segoe UI", 9, "bold"))
+                self.hotspot_rects["switch_rogue_pi"] = (pi_x1, pi_y1, pi_x2, pi_y2)
+            else:
+                self.create_rectangle(pi_x1, pi_y1, pi_x2, pi_y2, fill="#10202e", outline="#38bdf8", width=1, dash=(4, 2))
+                self.create_text(pi_x1 + 15, pi_y1 + 22, anchor="nw", text="📦 RASPBERRY PI FRAKOBLET & KONFISKERET\nEvidens sikret i antistatisk pose.", fill="#38bdf8", font=("Segoe UI", 9, "bold"))
+
+            self.hotspot_rects["switch_dlink"] = (sx1, sy1, sx2, sy1 + 100)
+        else:
+            self.create_rectangle(sx1, sy1, sx2, sy2, fill="#142433", outline="#22c55e", width=2)
+            self.create_rectangle(sx1, sy1, sx2, sy1 + 24, fill="#0f766e", outline="")
+            self.create_text(sx1 + 10, sy1 + 5, anchor="nw", text="SIEMENS SCALANCE XB-200 (MANAGED SWITCH)", fill="white", font=("Consolas", 9, "bold"))
+            self.create_text(sx1 + 12, sy1 + 32, anchor="nw", text="REDUNDANT 24V DC: OK  |  MRP RING MANAGER: AKTIV", fill="#4ade80", font=("Consolas", 8, "bold"))
+            self.hotspot_rects["switch_scalance"] = (sx1, sy1, sx2, sy2)
+
+        footer_y = h - 26
+        self.create_rectangle(0, footer_y, w, h, fill="#081018", outline="#1c3347", width=1)
+        if self.switch_step == 0:
+            step_txt = "▶ TRIN 1: Frakobl Rogue Raspberry Pi fra kabelbakken (Klik på Pi for at fjerne)"
+        elif self.switch_step == 1:
+            step_txt = "▶ TRIN 2: Monter Siemens SCALANCE XB-200 managed switch og kobl PROFINET kabler"
+        elif self.switch_step == 2:
+            step_txt = "▶ TRIN 3: Kobl PROFINET MRP-ring på Port 1 & 2 samt aktiver MAC Port Security"
+        else:
+            step_txt = "✅ FULDFØRT: Determinisme genoprettet via MRP. Klik forneden for at vende tilbage."
+        self.create_text(20, footer_y + 4, anchor="nw", text=step_txt, fill="#f6d365", font=("Consolas", 9, "bold"))
+
+    def on_switch_workbench_click(self, hotspot_name: str) -> None:
+        if hotspot_name in {"switch_rogue_pi"}:
+            self.master_app.do_switch_remove_pi()
+        elif hotspot_name in {"switch_dlink"}:
+            if "pi-removed" not in self.engine.flags:
+                self.master_app.do_switch_pille_fra()
+            else:
+                self.master_app.do_switch_install_scalance()
+        elif hotspot_name in {"switch_scalance"} and self.switch_step >= 2:
+            self.master_app.do_switch_mrp_ring()
+        elif self.switch_step >= 3:
+            self.master_app.switch_to_room_view()
+
+
+# =============================================================================
+# MAIN APPLICATION CONTROLLER
+# =============================================================================
+class GameApp(tk.Tk):
+    """Cockpit GUI for The Curse of Insecure Packets."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.title("The Curse of Insecure Packets - OT-Cybersikkerhed Cockpit")
+        self.geometry("1140x860")
+        self.minsize(1000, 720)
+        self.configure(bg="#0b1116")
+
+        self.output_queue: list[str] = []
+        self.output_busy = False
+        self.is_paused = False
+        self.speed_mode = "adaptive"
+        self.last_was_compact = False
+
+        self.engine = GameEngine(self.write)
+        self.intro_step = 0
+        self.intro_answers: list[str] = []
+
+        self.setup_ui()
+        self.bind("<space>", self.on_space_pressed)
+        self.after(100, self.introduce)
+        self.after(1000, self.update_timer)
+
+    def setup_ui(self) -> None:
+        # Top Header Bar: Title + Workweek Status + Timers
+        header = tk.Frame(self, bg="#101c27", padx=16, pady=6)
+        header.pack(fill="x")
+
+        tk.Label(
+            header, text="THE CURSE OF INSECURE PACKETS",
+            bg="#101c27", fg="#f6d365", font=("Consolas", 13, "bold"),
+        ).pack(side="left")
+
+        self.timer_label = tk.Label(
+            header, text="Dag 1/5 | Tid: --:--",
+            bg="#101c27", fg="#f6d365", font=("Consolas", 11, "bold"),
+        )
+        self.timer_label.pack(side="right")
+
+        self.acute_label = tk.Label(
+            header, text="ℹ️ Pumpe 2: Stand-by",
+            bg="#101c27", fg="#94a3b8", font=("Consolas", 11, "bold"), padx=10,
+        )
+        self.acute_label.pack(side="right", padx=10)
+
+        # Streamlined Purdue Zone Navigation Bar (Top)
+        zone_bar = tk.Frame(self, bg="#0d1822", padx=12, pady=4, relief="groove", bd=1)
+        zone_bar.pack(fill="x")
+
+        tk.Label(
+            zone_bar, text="PURDUE ZONER:", bg="#0d1822", fg="#9cbcd4",
+            font=("Segoe UI", 9, "bold"), padx=4,
+        ).pack(side="left")
+
+        self.room_buttons: dict[str, tk.Button] = {}
+        for title, key in (
+            ("🚪 Indgangen (L4)", "indgangen"),
+            ("🚰 Pumpehuset (L1)", "pumpehuset"),
+            ("💨 Ventil-øen (L1)", "ventil-oen"),
+            ("⚡ El-tavlen (L1/L2)", "el-tavlen"),
+            ("🖥️ Kontrolrummet (IDMZ)", "kontrolrummet"),
+        ):
+            b = tk.Button(
+                zone_bar, text=title, bg="#16293a", fg="#d8e6ed", activebackground="#274a68",
+                relief="groove", font=("Segoe UI", 9),
+                command=lambda k=key: self.navigate_to(k),
+            )
+            b.pack(side="left", padx=3)
+            self.room_buttons[key] = b
+
+        # Objective Banner
+        self.objective_banner = tk.Label(
+            self, text="Aktuelt mål: Start ansættelsessamtale",
+            bg="#172e42", fg="#dceaf4", font=("Segoe UI", 9, "bold"),
+            padx=16, pady=3, anchor="w",
+        )
+        self.objective_banner.pack(fill="x")
+
+        # Visual 2D Game Canvas (Dual-View Screen: Plant Floor vs. Field Laptop)
+        self.map = GameCanvas(self, self.engine, on_hotspot_click=self.on_canvas_click, height=350)
+        self.map.pack(fill="x", expand=False, padx=12, pady=(4, 4))
+
+        # Contextual In-Screen Workbench Toolbars (Only shown during DIN/Switch workbench)
+        self.vfd_toolbar = tk.Frame(self, bg="#102232", padx=8, pady=4, relief="ridge", bd=1)
+        self.vfd_action_btn = tk.Button(
+            self.vfd_toolbar, text="📦 1. Tag SCALANCE S615 & monter på DIN-skinne",
+            bg="#0284c7", fg="white", activebackground="#0369a1", font=("Segoe UI", 9, "bold"),
+            command=self.do_vfd_step_1, padx=10,
+        )
+        self.vfd_action_btn.pack(side="left", padx=4)
+        tk.Button(
+            self.vfd_toolbar, text="🔙 Tilbage til Pumpehuset", bg="#1f364d", fg="#dceaf4",
+            font=("Segoe UI", 9), command=self.switch_to_room_view,
+        ).pack(side="right", padx=4)
+
+        self.switch_toolbar = tk.Frame(self, bg="#102232", padx=8, pady=4, relief="ridge", bd=1)
+        self.btn_switch_pi = tk.Button(
+            self.switch_toolbar, text="🔌 1. Frakobl Rogue Raspberry Pi",
+            bg="#0284c7", fg="white", activebackground="#0369a1", font=("Segoe UI", 9, "bold"),
+            command=self.do_switch_remove_pi, padx=6,
+        )
+        self.btn_switch_pi.pack(side="left", padx=3)
+        self.btn_switch_pille = tk.Button(
+            self.switch_toolbar, text="⚠️ Pille D-Link switch fra",
+            bg="#7f1d1d", fg="#fee2e2", activebackground="#991b1b", font=("Segoe UI", 9),
+            command=self.do_switch_pille_fra, padx=6,
+        )
+        self.btn_switch_pille.pack(side="left", padx=3)
+        self.btn_switch_scalance = tk.Button(
+            self.switch_toolbar, text="🔄 2. Monter SCALANCE XB-200",
+            bg="#0f766e", fg="white", activebackground="#115e59", font=("Segoe UI", 9, "bold"),
+            command=self.do_switch_install_scalance, padx=6,
+        )
+        self.btn_switch_scalance.pack(side="left", padx=3)
+        self.btn_switch_mrp = tk.Button(
+            self.switch_toolbar, text="🔗 3. Forbind PROFINET MRP-ring",
+            bg="#059669", fg="white", activebackground="#047857", font=("Segoe UI", 9, "bold"),
+            command=self.do_switch_mrp_ring, padx=6,
+        )
+        self.btn_switch_mrp.pack(side="left", padx=3)
+        tk.Button(
+            self.switch_toolbar, text="🔙 Tilbage til Ventil-øen", bg="#1f364d", fg="#dceaf4",
+            font=("Segoe UI", 9), command=self.switch_to_room_view,
+        ).pack(side="right", padx=4)
+
+        # Bottom Split Deck: Narrative Terminal (65%) & Action Cockpit (35%)
+        deck = tk.Frame(self, bg="#0b1116", padx=12, pady=2)
+        deck.pack(fill="both", expand=True, pady=(0, 6))
+
+        # Left Deck: Narrative Log + Pacing Toolbar
+        left_deck = tk.Frame(deck, bg="#0b1116")
+        left_deck.pack(side="left", fill="both", expand=True, padx=(0, 8))
+
+        log_container = tk.Frame(left_deck, bg="#080d12", highlightthickness=1, highlightbackground="#1e3448")
+        log_container.pack(fill="both", expand=True)
+
+        self.log_scroll = tk.Scrollbar(log_container, bg="#101c27", troughcolor="#080d12", relief="flat")
+        self.log_scroll.pack(side="right", fill="y")
+
+        self.log = tk.Text(
+            log_container, bg="#080d12", fg="#d8e6ed", height=14,
+            font=("Consolas", 10), wrap="word", padx=12, pady=8, state="disabled",
+            bd=0, highlightthickness=0, yscrollcommand=self.log_scroll.set,
+        )
+        self.log.pack(side="left", fill="both", expand=True)
+        self.log_scroll.config(command=self.log.yview)
+
+        self.log.tag_configure("alarm", foreground="#f87171")
+        self.log.tag_configure("success", foreground="#4ade80")
+        self.log.tag_configure("highlight", foreground="#fde047")
+        self.log.tag_configure("cyan", foreground="#38bdf8")
+        self.log.tag_configure("purple", foreground="#c084fc")
+        self.log.tag_configure("menu_hdr", foreground="#fde047", font=("Consolas", 10, "bold"))
+        self.log.tag_configure("choice", foreground="#7dd3fc")
+
+        pacing_row = tk.Frame(left_deck, bg="#0b1116")
+        pacing_row.pack(fill="x", pady=(4, 0))
+
+        self.pause_btn = tk.Button(
+            pacing_row, text="⏸ Pause", bg="#142c3d", fg="#f6d365",
+            font=("Segoe UI", 8), relief="groove", command=self.toggle_pause,
+        )
+        self.pause_btn.pack(side="left", padx=2)
+
+        tk.Button(
+            pacing_row, text="Næste linje ⏩", bg="#142c3d", fg="#e2e8f0",
+            font=("Segoe UI", 8), relief="groove", command=self.next_line,
+        ).pack(side="left", padx=2)
+
+        self.speed_btn = tk.Button(
+            pacing_row, text="⚡ Tempo: Roligt/Adaptivt", bg="#142c3d", fg="#f6d365",
+            font=("Segoe UI", 8), relief="groove", command=self.toggle_speed_mode,
+        )
+        self.speed_btn.pack(side="left", padx=2)
+
+        tk.Button(
+            pacing_row, text="⏭ Vis alt straks", bg="#142c3d", fg="#64d8cb",
+            font=("Segoe UI", 8), relief="groove", command=self.flush_output,
+        ).pack(side="left", padx=2)
+
+        # Right Deck: OT Cockpit & Quick Commands (Compact & Streamlined)
+        right_deck = tk.Frame(deck, bg="#101c27", padx=8, pady=4, relief="ridge", bd=1)
+        right_deck.pack(side="right", fill="y")
+
+        self.btn_laptop_toggle = tk.Button(
+            right_deck, text="💻 Åbn Felt-Laptop",
+            bg="#0284c7", fg="white", activebackground="#0369a1",
+            font=("Segoe UI", 9, "bold"), pady=4, command=self.toggle_laptop_view,
+        )
+        self.btn_laptop_toggle.pack(fill="x", pady=(0, 3))
+
+        act_row = tk.Frame(right_deck, bg="#101c27")
+        act_row.pack(fill="x", pady=1)
+
+        tk.Button(
+            act_row, text="🎒 Rygsæk", bg="#162b3d", fg="#dceaf4",
+            font=("Segoe UI", 8, "bold"), command=lambda: self.command("inventory"),
+        ).pack(side="left", fill="x", expand=True, padx=1)
+
+        self.support_btn = tk.Button(
+            act_row, text="📞 Support", bg="#162b3d", fg="#dceaf4",
+            font=("Segoe UI", 8, "bold"), command=lambda: self.command("techsupport"),
+        )
+        self.support_btn.pack(side="left", fill="x", expand=True, padx=1)
+
+        tk.Button(
+            act_row, text="🎯 Guide", bg="#1e40af", fg="white",
+            font=("Segoe UI", 8, "bold"), command=self.show_guidance_window,
+        ).pack(side="left", fill="x", expand=True, padx=1)
+
+        # Compact Command Input Deck
+        cmd_box = tk.Frame(right_deck, bg="#142332", padx=6, pady=4, relief="groove", bd=1)
+        cmd_box.pack(fill="x", pady=(4, 3))
+
+        tk.Label(cmd_box, text="Kommando:", bg="#142332", fg="#f6d365", font=("Segoe UI", 8, "bold")).pack(side="left", padx=(0, 4))
+
+        self.command_entry = tk.Entry(
+            cmd_box, bg="#0d1620", fg="#ffffff", insertbackground="white",
+            font=("Consolas", 9), relief="sunken", width=13,
+        )
+        self.command_entry.pack(side="left", fill="x", expand=True, padx=(0, 3))
+        self.command_entry.bind("<Return>", lambda _event: self.submit())
+
+        tk.Button(
+            cmd_box, text="⏎", bg="#0284c7", fg="white", activebackground="#0369a1",
+            font=("Segoe UI", 8, "bold"), padx=6, pady=0, command=self.submit,
+        ).pack(side="right")
+
+        # Quick Choice Keypad (Click 1-6 directly without typing!)
+        choice_box = tk.Frame(right_deck, bg="#0d1620", padx=6, pady=3, relief="groove", bd=1)
+        choice_box.pack(fill="x", pady=(2, 3))
+
+        tk.Label(
+            choice_box, text="⚡ HURTIGVALG HANDLING:", bg="#0d1620", fg="#9cbcd4",
+            font=("Segoe UI", 7, "bold"),
+        ).pack(anchor="w", pady=(0, 2))
+
+        pad_row1 = tk.Frame(choice_box, bg="#0d1620")
+        pad_row1.pack(fill="x", pady=1)
+        for num in ("1", "2", "3"):
+            tk.Button(
+                pad_row1, text=f"[{num}]", bg="#16293a", fg="#f6d365", activebackground="#0284c7",
+                font=("Consolas", 8, "bold"), padx=2, pady=1,
+                command=lambda n=num: self.submit_choice(n),
+            ).pack(side="left", fill="x", expand=True, padx=1)
+
+        pad_row2 = tk.Frame(choice_box, bg="#0d1620")
+        pad_row2.pack(fill="x", pady=1)
+        for num in ("4", "5", "6"):
+            tk.Button(
+                pad_row2, text=f"[{num}]", bg="#16293a", fg="#f6d365", activebackground="#0284c7",
+                font=("Consolas", 8, "bold"), padx=2, pady=1,
+                command=lambda n=num: self.submit_choice(n),
+            ).pack(side="left", fill="x", expand=True, padx=1)
+
+        # Industrial Incident Mini-Card
+        self.status_mini = tk.Label(
+            right_deck, text="🛡️ IEC 62443 / NIS2 COCKPIT\nZone: Aktiv | SL-2 Sikret",
+            bg="#081018", fg="#64d8cb", font=("Consolas", 7),
+            padx=4, pady=3, relief="sunken", bd=1, justify="center",
+        )
+        self.status_mini.pack(fill="x", pady=(2, 0))
+
+        self.update_nav_highlight()
+
+    # =========================================================================
+    # VIEW MODE SWITCHING & FIELD LAPTOP CONTROLS
+    # =========================================================================
+    def switch_to_room_view(self) -> None:
+        self.vfd_toolbar.pack_forget()
+        self.switch_toolbar.pack_forget()
+        self.map.view_mode = "room"
+        self.map.draw()
+        self.btn_laptop_toggle.configure(text="💻 Åbn Felt-Laptop", bg="#0284c7")
+        self.update_nav_highlight()
+
+    def switch_to_laptop_view(self, tab: str = "wireshark") -> None:
+        self.vfd_toolbar.pack_forget()
+        self.switch_toolbar.pack_forget()
+        self.engine.flags.add("laptop-open")
+        if tab == "wireshark":
+            self.engine.flags.add("wireshark-open")
+        self.map.view_mode = "laptop"
+        self.map.laptop_tab = tab
+        self.map.selected_packet_idx = 0
+        self.map.draw()
+        self.btn_laptop_toggle.configure(text="🏭 Vis Fabriksgulv", bg="#0f766e")
+
+    def toggle_laptop_view(self) -> None:
+        if self.map.view_mode == "laptop":
+            self.switch_to_room_view()
+        else:
+            self.switch_to_laptop_view()
+
+    def switch_to_vfd_workbench(self) -> None:
+        self.switch_toolbar.pack_forget()
+        self.map.view_mode = "vfd_workbench"
+        if "chapter-1-done" in self.engine.flags:
+            self.map.vfd_step = 3
+        self.vfd_toolbar.pack(after=self.map, fill="x", padx=12, pady=(0, 4))
+        self.update_vfd_toolbar()
+        self.map.draw()
+
+    def update_vfd_toolbar(self) -> None:
+        step = self.map.vfd_step
+        if step == 0:
+            self.vfd_action_btn.configure(text="📦 1. Tag SCALANCE S615 & monter på DIN-skinne", bg="#0284c7", command=self.do_vfd_step_1)
+        elif step == 1:
+            self.vfd_action_btn.configure(text="🔌 2. Kobl RJ45 patchkabel fra LAN P1 til VFD", bg="#0284c7", command=self.do_vfd_step_2)
+        elif step == 2:
+            self.vfd_action_btn.configure(text="💾 3. Aktivér Modbus DPI Regelsæt (Tillad FC03 / Drop FC06)", bg="#059669", command=self.do_vfd_step_3)
+        elif step >= 3:
+            self.vfd_action_btn.configure(text="🚀 4. Conduit aktiv - Vend tilbage til Pumpehuset", bg="#16a34a", command=self.switch_to_room_view)
+
+    def do_vfd_step_1(self) -> None:
+        self.map.vfd_step = 1
+        self.write("📦 Du tager Siemens SCALANCE S615 sikkerhedsrouteren op af kassen og klikker den fast på 35mm DIN-skinnen.")
+        self.update_vfd_toolbar()
+        self.map.draw()
+
+    def do_vfd_step_2(self) -> None:
+        self.map.vfd_step = 2
+        self.write("🔌 Du fjerner det ubeskyttede kabel og forbinder et skærmet Cat6 industrikabel fra SCALANCE LAN Port 1 ind i frekvensomformeren. Samtidig tilsluttes WAN Port 5 mod fabrikkens uplink.")
+        self.update_vfd_toolbar()
+        self.map.draw()
+
+    def do_vfd_step_3(self) -> None:
+        self.map.vfd_step = 3
+        self.command("konfigurer firewall på frekvensomformer")
+        self.update_vfd_toolbar()
+        self.map.draw()
+
+    def switch_to_switch_workbench(self) -> None:
+        self.vfd_toolbar.pack_forget()
+        self.map.view_mode = "switch_workbench"
+        if "chapter-2-done" in self.engine.flags:
+            self.map.switch_step = 3
+        elif "pi-removed" in self.engine.flags and self.map.switch_step == 0:
+            self.map.switch_step = 1
+        self.switch_toolbar.pack(after=self.map, fill="x", padx=12, pady=(0, 4))
+        self.update_switch_toolbar()
+        self.map.draw()
+
+    def update_switch_toolbar(self) -> None:
+        flags = self.engine.flags
+        if "pi-removed" in flags or "chapter-2-done" in flags:
+            self.btn_switch_pi.configure(text="✅ 1. Rogue Pi Frakoblet", bg="#166534", state="disabled")
+        else:
+            self.btn_switch_pi.configure(text="🔌 1. Frakobl Rogue Raspberry Pi", bg="#0284c7", state="normal")
+
+        if "chapter-2-done" in flags:
+            self.btn_switch_scalance.configure(text="✅ 2. SCALANCE Monteret", bg="#166534", state="disabled")
+            self.btn_switch_mrp.configure(text="✅ 3. MRP Ring Aktiv", bg="#166534", state="disabled")
+            self.btn_switch_pille.configure(state="disabled")
+        elif self.map.switch_step >= 2:
+            self.btn_switch_scalance.configure(text="✅ 2. SCALANCE Monteret", bg="#166534", state="disabled")
+            self.btn_switch_mrp.configure(text="🔗 3. Forbind PROFINET MRP-ring", bg="#059669", state="normal")
+        else:
+            self.btn_switch_scalance.configure(text="🔄 2. Monter SCALANCE XB-200", bg="#0f766e", state="normal")
+            self.btn_switch_mrp.configure(text="🔗 3. Forbind PROFINET MRP-ring", bg="#059669", state="normal")
+
+    def do_switch_remove_pi(self) -> None:
+        self.command("fjern raspberry pi")
+        self.map.switch_step = max(self.map.switch_step, 1)
+        self.update_switch_toolbar()
+        self.map.draw()
+
+    def do_switch_pille_fra(self) -> None:
+        self.command("pille switch fra")
+        self.update_switch_toolbar()
+        self.map.draw()
+
+    def do_switch_install_scalance(self) -> None:
+        self.map.switch_step = 2
+        self.write("🔄 Du afmonterer den gamle unmanaged switch og monterer en industriel Siemens SCALANCE XB-200 managed switch på DIN-skinnen med redundant 24V spænding.")
+        self.update_switch_toolbar()
+        self.map.draw()
+
+    def do_switch_mrp_ring(self) -> None:
+        self.command("udskift switch med scalance")
+        self.map.switch_step = 3
+        self.update_switch_toolbar()
+        self.map.draw()
+
+    # =========================================================================
+    # EVENT HANDLERS & NAVIGATION
+    # =========================================================================
+    def on_space_pressed(self, _event: tk.Event[tk.Misc]) -> None:
+        if self.focus_get() != self.command_entry:
+            self.next_line()
+
+    def on_canvas_click(self, hotspot_name: str) -> None:
+        self.command(f"undersøg {hotspot_name}")
+
+    def navigate_to(self, room_key: str) -> None:
+        if self.map.view_mode != "room":
+            self.switch_to_room_view()
+        self.command(f"gå til {room_key}")
+        self.update_nav_highlight()
+        self.map.draw()
+
+    def update_nav_highlight(self) -> None:
+        for r_key, btn in self.room_buttons.items():
+            if r_key == self.engine.room:
+                btn.configure(bg="#0284c7", fg="white", relief="sunken")
+            else:
+                btn.configure(bg="#16293a", fg="#d8e6ed", relief="groove")
+
+    def toggle_pause(self) -> None:
+        self.is_paused = not self.is_paused
+        self.pause_btn.configure(
+            text="▶ Fortsæt" if self.is_paused else "⏸ Pause",
+            bg="#b45309" if self.is_paused else "#142c3d",
+            fg="white" if self.is_paused else "#f6d365",
+        )
+        if not self.is_paused:
+            self.drain_output()
+
+    def toggle_speed_mode(self) -> None:
+        modes = ["adaptive", "fast", "instant"]
+        curr_idx = modes.index(self.speed_mode)
+        self.speed_mode = modes[(curr_idx + 1) % len(modes)]
+        labels = {
+            "adaptive": "⚡ Tempo: Roligt/Adaptivt",
+            "fast": "⚡ Tempo: Hurtigt",
+            "instant": "⚡ Tempo: Straks",
+        }
+        self.speed_btn.configure(text=labels[self.speed_mode])
+
+    def is_wireshark_line(self, text: str) -> bool:
+        if not text:
+            return False
+        s = text.strip()
+        markers = (
+            "[WIRESHARK", "Display Filter:", "No.  Tid",
+            "Modbus/TCP", "PROFINET", "S7comm", "OPC UA",
+            "Internet Protocol Version", "Transmission Control Protocol",
+            "[PAKKE-DETALJER", "Echo Response:", "Transaction Identifier:"
+        )
+        if any(m in s for m in markers):
+            return True
+        if re.match(r"^\d{3}\s+\d+\.\d+", s) or re.match(r"^Frame\s+\d+:", s):
+            return True
+        return False
+
+    def is_dialogue_line(self, text: str) -> bool:
+        if not text:
+            return False
+        s = text.strip()
+        lower = s.lower()
+        core_speakers = (
+            "jens", "hans", "kirsten", "revisor", "hr-chef", "hr-chefen",
+            "driftstekniker", "tech support", "support", "scada-operatør", "scada-operatoer", "operatør", "operatoer"
+        )
+        if any(lower.startswith(sp) for sp in core_speakers) and ":" in lower:
+            return True
+        if any(marker in lower for marker in (
+            "over radioen:", "i radioen:", "råber:", "raaber:", "siger:", "spørger:", "spoerger:",
+            "klapper i hænderne:", "klapper i haenderne:", "nikker:", "tager imod dig med sin kaffekop:",
+            "svarer:", "forklarer:"
+        )):
+            return True
+        return False
+
+    def is_menu_line(self, text: str) -> bool:
+        if not text:
+            return False
+        s = text.strip()
+        u = s.upper()
+        if "TILGÆNGELIGE" in u or "TILGAENGELIGE" in u or ("HANDLINGER" in u and ("TAST TAL" in u or "VÆLG" in u or "VAELG" in u)):
+            return True
+        if re.match(r"^\[([0-9a-zA-Z]+)\]\s+", s):
+            return True
+        return False
+
+    def is_pacing_required(self, text: str) -> bool:
+        if self.is_menu_line(text):
+            return False
+        return self.is_dialogue_line(text) or self.is_wireshark_line(text)
+
+    def calculate_line_delay(self, text: str) -> int:
+        if self.speed_mode == "instant":
+            return 0
+        is_wireshark = self.is_wireshark_line(text)
+        if self.speed_mode == "fast":
+            if is_wireshark:
+                return 400
+            return min(1400, max(350, 350 + len(text) * 7))
+
+        # Adaptive mode:
+        if is_wireshark:
+            return min(1100, max(500, 500 + len(text) * 6))
+        # Dialogue:
+        base_ms = 1400
+        char_ms = 16
+        return min(4200, max(1200, base_ms + len(text) * char_ms))
+
+    def write(self, message: str) -> None:
+        lines = [line.strip() for line in message.splitlines() if line.strip()]
+        self.output_queue.extend(lines)
+        self.drain_output()
+
+    def _insert_log_line(self, message: str) -> None:
+        tag = None
+        s = message.strip()
+        is_choice = bool(re.match(r"^\[([0-9a-zA-Z]+)\]\s+", s))
+        is_menu_hdr = "TILGÆNGELIGE HANDLINGER" in s
+
+        if any(w in message for w in {"[ALARM]", "[KRITISK", "💥", "KATASTROFE", "🚨"}):
+            tag = "alarm"
+        elif any(w in message for w in {"[LØSNING", "[OK]", "✅", "RESULTAT:", "BESTÅR", "🏆"}):
+            tag = "success"
+        elif is_menu_hdr:
+            tag = "menu_hdr"
+        elif is_choice:
+            tag = "choice"
+        elif self.is_dialogue_line(message):
+            tag = "highlight"
+        elif self.is_wireshark_line(message):
+            tag = "cyan"
+        elif any(w in message for w in {"IEC 62443", "NIS2"}):
+            tag = "purple"
+
+        is_compact_line = is_choice or is_menu_hdr or self.is_wireshark_line(message)
+
+        if is_compact_line:
+            suffix = "\n"
+            if is_choice and not message.startswith("  "):
+                message = f"  {message}"
+            self.last_was_compact = True
+        else:
+            prefix = "\n" if getattr(self, "last_was_compact", False) else ""
+            suffix = "\n\n"
+            message = prefix + message
+            self.last_was_compact = False
+
+        if tag:
+            self.log.insert("end", message + suffix, tag)
+        else:
+            self.log.insert("end", message + suffix)
+
+    def drain_output(self) -> None:
+        if self.output_busy or not self.output_queue or self.is_paused:
+            return
+
+        self.log.configure(state="normal")
+
+        # 1. Immediate Batch Loop:
+        # Menus, choices, room titles, status messages, and non-dialogue responses
+        # are flushed immediately in one single pass ("i én køre")!
+        while self.output_queue and not self.is_pacing_required(self.output_queue[0]):
+            message = self.output_queue.pop(0)
+            self._insert_log_line(message)
+
+        # 2. Check if a line that REQUIRES pacing (dialogue or live Wireshark) was encountered:
+        if self.output_queue and not self.is_paused:
+            message = self.output_queue.pop(0)
+            self._insert_log_line(message)
+            self.output_busy = True
+            delay = self.calculate_line_delay(message)
+        else:
+            delay = 0
+
+        self.log.see("end")
+        self.log.configure(state="disabled")
+        self.map.draw()
+        self.update_timer_display()
+
+        if delay > 0:
+            self.after(delay, self.finish_output)
+        else:
+            self.output_busy = False
+
+    def next_line(self) -> None:
+        if not self.output_queue:
+            return
+        self.log.configure(state="normal")
+        message = self.output_queue.pop(0)
+        self._insert_log_line(message)
+        while self.output_queue and not self.is_pacing_required(self.output_queue[0]):
+            msg = self.output_queue.pop(0)
+            self._insert_log_line(msg)
+        self.log.see("end")
+        self.log.configure(state="disabled")
+        self.output_busy = False
+        self.map.draw()
+        self.update_timer_display()
+
+    def finish_output(self) -> None:
+        self.output_busy = False
+        if not self.is_paused:
+            self.drain_output()
+
+    def flush_output(self) -> None:
+        if not self.output_queue:
+            return
+        self.log.configure(state="normal")
+        while self.output_queue:
+            msg = self.output_queue.pop(0)
+            self._insert_log_line(msg)
+        self.log.see("end")
+        self.log.configure(state="disabled")
+        self.output_busy = False
+        self.map.draw()
+        self.update_timer_display()
+
+    def introduce(self) -> None:
+        self.write("THE CURSE OF INSECURE PACKETS - ET OT-CYBERSECURITY EVENTYR")
+        self.write(
+            "Jens Majer, direktør: Velkommen til ansættelsessamtalen her hos Nordic H2O Utility. "
+            "Før vi gennemgår anlæggets udfordringer: Hvad hedder du?"
+        )
+        self.intro_step = 1
+        self.objective_banner.configure(text="Ansættelsessamtale: Skriv dit navn i kommandofeltet til højre og tryk Enter/Udfør.")
+        self.command_entry.focus_set()
+
+    def update_timer_display(self) -> None:
+        audit = self.engine.time_display
+        color = "#ef4444" if self.engine.time_remaining <= 60 else "#f6d365"
+        self.timer_label.configure(
+            text=f"Dag {self.engine.simulated_day}/5 (Time {self.engine.simulated_hour}/8) | Audit: {audit}",
+            fg=color,
+        )
+
+        if self.engine.cavitation_deadline_active:
+            cav_time = self.engine.cavitation_time_display
+            c_color = "#ef4444" if self.engine.cavitation_time_remaining <= 25 else "#f87171"
+            self.acute_label.configure(text=f"🚨 KAVITATION: {cav_time}", fg=c_color)
+        elif self.engine.pump_deadline_active:
+            pump_time = self.engine.pump_time_display
+            p_color = "#ef4444" if self.engine.pump_time_remaining <= 30 else "#f87171"
+            self.acute_label.configure(text=f"⚠️ PUMPE 2 ALARM: {pump_time}", fg=p_color)
+        elif "chapter-2-done" in self.engine.flags:
+            self.acute_label.configure(text="✅ PROFINET & Ventiler sikret (MRP aktiv)", fg="#4ade80")
+        elif "chapter-1-done" in self.engine.flags:
+            self.acute_label.configure(text="✅ Pumpe 2 tryk stabiliseret (42 Bar)", fg="#4ade80")
+        else:
+            self.acute_label.configure(text="ℹ️ Pumpe 2: Stand-by (Alarm aktiveres i pumpehuset)", fg="#64748b")
+
+        self.support_btn.configure(text=f"📞 Support ({self.engine.max_help_calls - self.engine.help_calls}/{self.engine.max_help_calls})")
+
+        if hasattr(self, "status_mini"):
+            room_title = ROOMS[self.engine.room].title
+            threat = "⚠️ PUMPE 2 ALARM" if self.engine.pump_deadline_active else ("🚨 KAVITATION" if self.engine.cavitation_deadline_active else "Sikker drift")
+            self.status_mini.configure(text=f"🛡️ {room_title.upper()}\nTrussel: {threat}\nNIS2: Dag {self.engine.simulated_day}/5")
+
+    def update_timer(self) -> None:
+        if self.engine.running and self.engine.timer_started_at:
+            self.engine.check_timers()
+            self.update_timer_display()
+        if self.winfo_exists():
+            self.after(1000, self.update_timer)
+
+    def command(self, command: str) -> None:
+        normalized = command.strip().lower()
+
+        # View and Tool command interception for seamless synchronization
+        if normalized in {"hjælp", "help", "?"}:
+            self.show_help_window()
+        elif normalized in {"næste skridt", "guidance", "guide"}:
+            self.show_guidance_window()
+        elif normalized in {"revisor", "audit"} and self.engine.chapter == 5:
+            self.complete_audit()
+        elif normalized in {"åbn wireshark", "wireshark"}:
+            self.switch_to_laptop_view("wireshark")
+            self.engine.handle_command("åbn wireshark")
+        elif normalized in {"åbn tia portal", "tia portal", "tia"}:
+            self.switch_to_laptop_view("tia")
+            self.engine.handle_command("åbn tia portal")
+        elif normalized in {"åbn scalance", "scalance", "wbm"}:
+            self.switch_to_laptop_view("scalance")
+        elif normalized in {"åbn scada", "scada", "telemetri"}:
+            self.switch_to_laptop_view("scada")
+        elif normalized in {"åbn laptop", "laptop", "felt-laptop"}:
+            self.switch_to_laptop_view()
+        elif normalized in {"luk laptop", "luk", "tilbage", "tilbage til rum"}:
+            self.switch_to_room_view()
+        elif normalized in {"firewall workbench", "åbn montage", "vfd montage"}:
+            self.switch_to_vfd_workbench()
+        elif normalized in {"switch workbench", "switch montage"}:
+            self.switch_to_switch_workbench()
+        else:
+            self.engine.handle_command(command)
+
+        self.update_nav_highlight()
+        self.map.draw()
+        self.update_objective()
+
+    def complete_audit(self) -> None:
+        self.engine.complete_audit()
+        self.map.draw()
+        self.update_objective()
+
+    def update_objective(self) -> None:
+        if self.engine.chapter == 0:
+            self.objective_banner.configure(text="Ansættelsessamtale i gang")
+            return
+        obj_text = OBJECTIVES.get(self.engine.chapter, "Afventer næste opgave")
+        self.objective_banner.configure(
+            text=f"Aktuelt mål (Kapitel {self.engine.chapter}/5): {obj_text}"
+        )
+
+    def show_guidance_window(self) -> None:
+        objective, threat_context, standard_ref, actions = self.engine.guidance()
+
+        window = tk.Toplevel(self)
+        window.title("Faglig Læringsguide & Næste Skridt (NIS2 / IEC 62443)")
+        window.geometry("640x520")
+        window.configure(bg="#0f1923")
+        window.transient(self)
+
+        tk.Label(
+            window, text=f"KAPITEL {self.engine.chapter}/5: {objective}",
+            bg="#0f1923", fg="#f6d365", font=("Segoe UI", 12, "bold"),
+            wraplength=600, justify="left", anchor="w",
+        ).pack(fill="x", padx=18, pady=(16, 6))
+
+        threat_frame = tk.Frame(window, bg="#1a2734", padx=12, pady=10, relief="groove", bd=1)
+        threat_frame.pack(fill="x", padx=18, pady=4)
+        tk.Label(
+            threat_frame, text="🔍 Trusselsbillede & Teknisk Observation:",
+            bg="#1a2734", fg="#38bdf8", font=("Segoe UI", 9, "bold"), anchor="w",
+        ).pack(fill="x")
+        tk.Label(
+            threat_frame, text=threat_context, bg="#1a2734", fg="#e2e8f0",
+            font=("Segoe UI", 9), wraplength=570, justify="left", anchor="w",
+        ).pack(fill="x", pady=(4, 0))
+
+        std_frame = tk.Frame(window, bg="#201c33", padx=12, pady=8, relief="groove", bd=1)
+        std_frame.pack(fill="x", padx=18, pady=6)
+        tk.Label(
+            std_frame, text="📜 Faglig Reference (NIS2 & IEC 62443):",
+            bg="#201c33", fg="#c084fc", font=("Segoe UI", 9, "bold"), anchor="w",
+        ).pack(fill="x")
+        tk.Label(
+            std_frame, text=standard_ref, bg="#201c33", fg="#e9d5ff",
+            font=("Segoe UI", 9), wraplength=570, justify="left", anchor="w",
+        ).pack(fill="x", pady=(2, 0))
+
+        tk.Label(
+            window, text="Vælg en faglig handling for at udføre:",
+            bg="#0f1923", fg="#94a3b8", font=("Segoe UI", 9, "bold"), anchor="w",
+        ).pack(fill="x", padx=18, pady=(8, 4))
+
+        actions_frame = tk.Frame(window, bg="#0f1923")
+        actions_frame.pack(fill="both", expand=True, padx=18, pady=(0, 10))
+
+        for cmd, explanation in actions:
+            row = tk.Frame(actions_frame, bg="#162635", padx=8, pady=6, relief="ridge", bd=1)
+            row.pack(fill="x", pady=3)
+
+            tk.Label(
+                row, text=explanation, bg="#162635", fg="#dceaf4",
+                font=("Segoe UI", 9), wraplength=440, justify="left", anchor="w",
+            ).pack(side="left", fill="x", expand=True)
+
+            tk.Button(
+                row, text=f"Kør: {cmd}", bg="#0284c7", fg="white",
+                activebackground="#0369a1", font=("Consolas", 8, "bold"),
+                command=lambda c=cmd, w=window: self.execute_guidance(c, w),
+            ).pack(side="right", padx=4)
+
+        tk.Button(window, text="Luk vejledning", bg="#1f364d", fg="#d8e6ed", command=window.destroy).pack(pady=(0, 12))
+
+    def execute_guidance(self, command: str, window: tk.Toplevel) -> None:
+        window.destroy()
+        self.command(command)
+
+    def show_help_window(self) -> None:
+        window = getattr(self, "help_window", None)
+        if window is not None and window.winfo_exists():
+            text = getattr(self, "help_text_widget", None)
+            if text is not None:
+                text.configure(state="normal")
+                text.delete("1.0", "end")
+                text.insert("1.0", self.engine.help_text())
+                text.configure(state="disabled")
+            window.lift()
+            return
+
+        window = tk.Toplevel(self)
+        self.help_window = window
+        window.title("Spilvejledning & OT-Cybersikkerhed")
+        window.geometry("620x520")
+        window.configure(bg="#0b1116")
+        window.transient(self)
+
+        text = tk.Text(
+            window, bg="#080d12", fg="#d8e6ed", insertbackground="white",
+            font=("Consolas", 10), wrap="word", padx=14, pady=14,
+        )
+        text.pack(fill="both", expand=True, padx=12, pady=12)
+        text.insert("1.0", self.engine.help_text())
+        text.configure(state="disabled")
+        self.help_text_widget = text
+
+        tk.Button(window, text="Luk hjælp", bg="#1b3348", fg="#d8e6ed", command=window.destroy).pack(pady=(0, 10))
+
+    def submit(self) -> None:
+        command = self.command_entry.get().strip()
+        self.command_entry.delete(0, "end")
+        if not command:
+            return
+
+        if self.intro_step:
+            self.submit_intro(command)
+            return
+
+        self.write(f"> {command}")
+        self.command(command)
+
+    def submit_choice(self, choice_key: str) -> None:
+        if self.intro_step:
+            return
+        self.write(f"> {choice_key}")
+        self.command(choice_key)
+
+    def submit_intro(self, answer: str) -> None:
+        self.write(f"> {answer}")
+        self.intro_answers.append(answer)
+
+        if len(self.intro_answers) == 1:
+            self.intro_step = 2
+            self.write(
+                f"Jens: Godt at have dig med om bord, {answer}. "
+                "Hvilken uddannelse eller baggrund bringer du med dig?"
+            )
+            self.objective_banner.configure(
+                text="Ansættelsessamtale: Hvilken uddannelse eller baggrund har du?"
+            )
+            return
+
+        self.intro_step = 0
+        self.objective_banner.configure(
+            text="Gennemgang afsluttet - klar til indsats!"
+        )
+        edu = self.intro_answers[1] if len(self.intro_answers) > 1 else " Automation"
+        self.engine.start(self.intro_answers[0], edu)
+        self.update_timer_display()
+        self.update_objective()
+        self.update_nav_highlight()
+
+
+def main() -> None:
+    app = GameApp()
+    app.mainloop()
+
+
+if __name__ == "__main__":
+    main()
