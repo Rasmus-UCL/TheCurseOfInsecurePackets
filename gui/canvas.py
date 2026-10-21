@@ -37,9 +37,9 @@ class GameCanvas(tk.Canvas):
 
     def start_animation(self) -> None:
         self.anim_tick = (self.anim_tick + 1) % 100
-        if self.view_mode == "room" and self.engine.room in {"pumpehuset", "ventil-oen"}:
+        if self.view_mode == "room" and self.engine.room in {"pumpehuset", "ventil-oen", "el-tavlen", "kontrolrummet"}:
             self.draw()
-        elif self.view_mode in {"vfd_workbench", "switch_workbench"}:
+        elif self.view_mode in {"vfd_workbench", "switch_workbench", "clue_board"}:
             self.draw()
         if self.winfo_exists():
             self.after(350, self.start_animation)
@@ -114,6 +114,8 @@ class GameCanvas(tk.Canvas):
             self.draw_vfd_workbench(width, height)
         elif self.view_mode == "switch_workbench":
             self.draw_switch_workbench(width, height)
+        elif self.view_mode == "clue_board":
+            self.draw_clue_board(width, height)
 
     # -------------------------------------------------------------------------
     # 1. PLANT FLOOR ROOM VIEW RENDERING
@@ -203,6 +205,12 @@ class GameCanvas(tk.Canvas):
             self.create_rectangle(10, pipe_y - 10, width - 10, pipe_y + 10, fill=pipe_color, outline="#1b3a4a", width=2)
             self.create_text(width - 150, pipe_y - 18, text="HOVED-RØR 16 BAR / DN150", fill="#a1c4d9", font=("Consolas", 8))
 
+            # Dynamic water hammer shockwaves in pipe under Modbus sabotage
+            if not c1_done:
+                wave_offset = (self.anim_tick * 14) % 80
+                for wx in range(15 + wave_offset, width - 20, 80):
+                    self.create_line(wx, pipe_y - 7, wx + 12, pipe_y + 7, fill="#ef4444", width=3)
+
             # Steel TS35 DIN-rail in Pumpehuset (Clickable directly on screen!)
             rail_y = 135
             self.create_rectangle(15, rail_y - 8, width - 15, rail_y + 8, fill="#334155", outline="#64748b", width=1)
@@ -214,18 +222,44 @@ class GameCanvas(tk.Canvas):
             tube_y = 210
             self.create_line(15, tube_y, width - 15, tube_y, fill="#3b7a99", width=4, dash=(6, 3))
             self.create_line(15, tube_y + 14, width - 15, tube_y + 14, fill="#2b5c73", width=3)
+            # Animated DCP packet pulses along PROFINET bus when not done
+            if "chapter-2-done" not in self.engine.flags:
+                pulse_x = 25 + (self.anim_tick * 25) % (width - 50)
+                self.create_oval(pulse_x - 6, tube_y - 4, pulse_x + 6, tube_y + 8, fill="#38bdf8", outline="white")
         elif r == "el-tavlen":
             rail_y = 200
             self.create_rectangle(15, rail_y - 8, width - 15, rail_y + 8, fill="#52606d", outline="#8295a5", width=2)
             self.create_text(width - 160, rail_y - 18, text="35mm DIN-SKINNE TS35", fill="#8295a5", font=("Consolas", 8))
         elif r == "kontrolrummet":
             self.create_rectangle(20, 70, width - 20, height - 35, fill="", outline="#1f425f", width=1, dash=(4, 4))
+            if "router-disconnected" not in self.engine.flags:
+                # Cellular wave arcs from 4G router towards top right
+                rx = width - 120
+                ry = 120
+                arc_r = 15 + (self.anim_tick % 4) * 8
+                self.create_arc(rx - arc_r, ry - arc_r, rx + arc_r, ry + arc_r, start=30, extent=120, outline="#38bdf8", width=2, style="arc")
 
     def draw_hotspot_card(self, name: str, x1: int, y1: int, x2: int, y2: int, is_hovered: bool, is_selected: bool) -> None:
         flags = self.engine.flags
+
+        # Show Don't Tell: Physical hydraulic vibration on Pumpe 2 under sabotage
+        if name == "pumpe 2" and "chapter-1-done" not in flags and not getattr(self.engine, "scada_blind", False):
+            jx = int(2.5 * math.sin(self.anim_tick * 1.8))
+            jy = int(1.5 * math.cos(self.anim_tick * 2.2))
+            x1 += jx
+            x2 += jx
+            y1 += jy
+            y2 += jy
+            self.hotspot_rects[name] = (x1, y1, x2, y2)
+
         card_bg = "#23415c" if is_selected else ("#1b354b" if is_hovered else "#132535")
         border_color = "#38bdf8" if is_selected else ("#f6d365" if is_hovered else "#2a4d6c")
         border_width = 3 if (is_selected or is_hovered) else 1
+
+        if getattr(self.engine, "scada_blind", False) and name in {"pumpe 2", "scada"}:
+            card_bg = "#26132b" if self.anim_tick % 2 == 0 else "#1c0d20"
+            border_color = "#c084fc"
+            border_width = 3
 
         self.create_rectangle(x1, y1, x2, y2, fill=card_bg, outline=border_color, width=border_width)
 
@@ -246,6 +280,9 @@ class GameCanvas(tk.Canvas):
                 sub_info = "Stabil drift"
             else:
                 pulsing = "#ef4444" if self.anim_tick % 2 == 0 else "#f87171"
+                badge_text = "146.5 BAR (VIBRATION!)"
+                badge_color = pulsing
+                sub_info = "Modbus sabotage aktiv!"
                 badge_text = "146.5 BAR (ALARM)"
                 badge_color = pulsing
                 sub_info = "Modbus sabotage aktiv!"
@@ -317,33 +354,36 @@ class GameCanvas(tk.Canvas):
                 badge_color = "#4ade80"
                 sub_info = "PROFINET RT synkron"
             else:
-                badge_text = "OSCILLERER"
-                badge_color = "#ef4444"
-                sub_info = "Kaos i trykluft!"
-        elif name == "s7-1500":
+                pulsing_state = "OPEN (KAOS)" if self.anim_tick % 2 == 0 else "CLOSE (OSCILLERER)"
+                badge_text = pulsing_state
+                badge_color = "#ef4444" if self.anim_tick % 2 == 0 else "#f87171"
+                sub_info = "DCP broadcast storm!"
+        elif name in {"s7-1500", "s7", "plc"}:
             icon_type = "🛡️ SIKKERHEDS-PLC"
             if getattr(self.engine, "plc_defect_stop", False):
                 badge_text = "DEFECTIVE STOP"
-                badge_color = "#ef4444"
-                sub_info = "Fejlkode 0x4542"
+                badge_color = "#ef4444" if self.anim_tick % 2 == 0 else "#fbbf24"
+                sub_info = "Fejlkode 0x4542 - DB1 korrupt"
             elif "chapter-3-done" in flags:
                 badge_text = "RUN MODE"
                 badge_color = "#4ade80"
-                sub_info = "PUT/GET blokeret"
+                sub_info = "Protection Level 3 aktiv"
             else:
-                badge_text = "STOP MODE"
-                badge_color = "#f59e0b"
+                blinking_stop = "#ef4444" if self.anim_tick % 2 == 0 else "#7f1d1d"
+                badge_text = "STOP DIODE BLINKER"
+                badge_color = blinking_stop
                 sub_info = "S7comm port 102"
-        elif name == "4g-router":
+        elif name in {"4g-router", "router", "4g"}:
             icon_type = "📡 ROGUE UPLINK"
             if "router-disconnected" in flags:
                 badge_text = "FRAKOBLET"
                 badge_color = "#4ade80"
                 sub_info = "IDMZ sikret"
             else:
-                badge_text = "AKTIV 4G BACKDOOR"
-                badge_color = "#ef4444"
-                sub_info = "Teltonika RUT950"
+                pulse_4g = "#38bdf8" if self.anim_tick % 2 == 0 else "#f59e0b"
+                badge_text = "((( AKTIV TUNNEL )))"
+                badge_color = pulse_4g
+                sub_info = "Teltonika RUT950 lækker"
         elif name == "opc ua server":
             icon_type = "🔒 OPC UA GATEWAY"
             if "chapter-4-done" in flags:
@@ -599,3 +639,130 @@ class GameCanvas(tk.Canvas):
         if name == "close_switch_workbench":
             self.master_app.command("vis rum")
         self.draw()
+
+    # -------------------------------------------------------------------------
+    # 4. INVESTIGATION CASE BOARD VIEW (SAGSTAVLE)
+    # -------------------------------------------------------------------------
+    def draw_clue_board(self, w: int, h: int) -> None:
+        # Corkboard / slate detective background
+        self.create_rectangle(0, 0, w, h, fill="#121820", outline="")
+
+        # Top Header Bar
+        self.create_rectangle(0, 0, w, 54, fill="#1c2430", outline="#2e3b4e", width=1)
+        self.create_text(
+            20, 12, anchor="nw",
+            text="🕵️ SAGSTAVLE – EFTERFORSKNING AF NORDIC H2O CYBERSABOTAGEN",
+            fill="#f6d365", font=("Consolas", 12, "bold"),
+        )
+
+        m = self.engine.metrics
+        self.create_text(
+            20, 34, anchor="nw",
+            text=f"Aktuel status: Drift {m.drift}%  |  Sikkerhed {m.sikkerhed}%  |  Compliance {m.compliance}%  |  Tillid {m.tillid}%",
+            fill="#94a3b8", font=("Segoe UI", 8),
+        )
+
+        # Close / Return button
+        btn_w = 200
+        btn_x1 = w - btn_w - 20
+        btn_x2 = w - 20
+        self.create_rectangle(btn_x1, 10, btn_x2, 42, fill="#1e293b", outline="#38bdf8", width=1)
+        self.create_text((btn_x1 + btn_x2) // 2, 26, text="⬅️ Tilbage til Anlægget", fill="#e0f2fe", font=("Segoe UI", 9, "bold"))
+        self.canvas_buttons["close_clue_board"] = (btn_x1, 10, btn_x2, 42, lambda: self.master_app.toggle_sagstavle())
+
+        # Column 1: Mistænkte & Hypoteser (Left ~42%)
+        col1_w = int(w * 0.44)
+        self.create_rectangle(15, 62, col1_w, h - 30, fill="#0d131a", outline="#1f2937", width=1)
+        self.create_text(25, 70, anchor="nw", text="👥 MISTÆNKTE & HYPOTESER (Klik for at anklage):", fill="#f6d365", font=("Segoe UI", 9, "bold"))
+
+        suspects = sorted(self.engine.investigation.suspects.values(), key=lambda x: x.suspicion_score, reverse=True)
+        s_y = 95
+        card_h = 42
+        for s in suspects:
+            s_bg = "#271d18" if s.status == "Hovedmistænkt" else "#141c24"
+            border_c = "#f59e0b" if s.status == "Hovedmistænkt" else "#253342"
+            border_w = 2 if s.status == "Hovedmistænkt" else 1
+
+            self.create_rectangle(22, s_y, col1_w - 8, s_y + card_h, fill=s_bg, outline=border_c, width=border_w)
+            star = "⭐ " if s.status == "Hovedmistænkt" else ""
+            self.create_text(28, s_y + 4, anchor="nw", text=f"{star}{s.name}", fill="#f8fafc", font=("Segoe UI", 8, "bold"))
+            self.create_text(28, s_y + 20, anchor="nw", text=f"{s.role[:38]}", fill="#94a3b8", font=("Segoe UI", 7))
+
+            # Suspicion meter
+            meter_w = 70
+            meter_x1 = col1_w - 18 - meter_w
+            meter_x2 = col1_w - 18
+            meter_y1 = s_y + 12
+            meter_y2 = s_y + 24
+            self.create_rectangle(meter_x1, meter_y1, meter_x2, meter_y2, fill="#0f172a", outline="#334155")
+            filled_w = int((s.suspicion_score / 100) * meter_w)
+            meter_col = "#ef4444" if s.suspicion_score >= 50 else ("#f59e0b" if s.suspicion_score >= 30 else "#38bdf8")
+            if filled_w > 0:
+                self.create_rectangle(meter_x1, meter_y1, meter_x1 + filled_w, meter_y2, fill=meter_col, outline="")
+            self.create_text(meter_x1 + meter_w // 2, meter_y1 + 6, text=f"{s.suspicion_score}%", fill="white", font=("Segoe UI", 7, "bold"))
+
+            # Click suspect to accuse / set prime
+            btn_id = f"susp_{s.id}"
+            self.canvas_buttons[btn_id] = (22, s_y, col1_w - 8, s_y + card_h, lambda sid=s.id: self.master_app.command(f"anklag {sid}"))
+            s_y += card_h + 6
+
+        # Column 2: Opdagede Spor (Right ~58%)
+        col2_x1 = col1_w + 12
+        col2_x2 = w - 15
+        self.create_rectangle(col2_x1, 62, col2_x2, h - 30, fill="#0d131a", outline="#1f2937", width=1)
+
+        discovered = self.engine.investigation.get_discovered_clues()
+        total_clues = len(self.engine.investigation.clues)
+        self.create_text(
+            col2_x1 + 12, 70, anchor="nw",
+            text=f"🔍 OPDAGEDE SPOR ({len(discovered)} af {total_clues} fundet - Klik for analyse):",
+            fill="#f6d365", font=("Segoe UI", 9, "bold"),
+        )
+
+        if not discovered:
+            # Blank corkboard note
+            p_x1, p_y1 = col2_x1 + 25, 105
+            p_x2, p_y2 = col2_x2 - 25, 230
+            self.create_rectangle(p_x1, p_y1, p_x2, p_y2, fill="#1c1917", outline="#78716c", width=1, dash=(4, 4))
+            self.create_text(
+                p_x1 + 20, p_y1 + 25, anchor="nw",
+                text="Ingen spor fundet endnu!\n\n"
+                     "1. Kør 'tshark' i Pumpehuset for at fange Modbus-sabotagen.\n"
+                     "2. Undersøg kabelbakken i Ventil-øen for skjult hardware.\n"
+                     "3. Inspicér PLC'ens diagnostic buffer i El-tavlen.\n"
+                     "4. Tal med Hans McDonald om mistænkelig adfærd.",
+                fill="#fbbf24", font=("Segoe UI", 9),
+            )
+        else:
+            c_y = 96
+            clue_card_h = 36
+            cat_colors = {
+                "Netværk": "#0284c7",
+                "Fysisk": "#b45309",
+                "Systemlog": "#7c3aed",
+                "Vidneudsagn": "#15803d",
+                "Konfiguration": "#475569",
+            }
+            for idx, c in enumerate(discovered[:6]):
+                cc_x1 = col2_x1 + 10
+                cc_x2 = col2_x2 - 10
+                cc_y1 = c_y
+                cc_y2 = c_y + clue_card_h
+                cat_col = cat_colors.get(c.category, "#334155")
+
+                self.create_rectangle(cc_x1, cc_y1, cc_x2, cc_y2, fill="#16202c", outline="#253545", width=1)
+                # Category pill badge
+                self.create_rectangle(cc_x1 + 6, cc_y1 + 8, cc_x1 + 80, cc_y1 + 28, fill=cat_col, outline="")
+                self.create_text(cc_x1 + 43, cc_y1 + 18, text=c.category.upper(), fill="white", font=("Segoe UI", 7, "bold"))
+
+                # Title & room
+                self.create_text(cc_x1 + 90, cc_y1 + 6, anchor="nw", text=c.title[:45], fill="#f8fafc", font=("Segoe UI", 8, "bold"))
+                self.create_text(cc_x1 + 90, cc_y1 + 20, anchor="nw", text=f"Fundet i: {c.discovery_room} ({c.discovered_time}) - Klik for analyse", fill="#64748b", font=("Segoe UI", 7))
+
+                btn_id = f"clue_{c.id}"
+                self.canvas_buttons[btn_id] = (cc_x1, cc_y1, cc_x2, cc_y2, lambda cid=c.id: self.master_app.command(f"analyser spor {cid}"))
+                c_y += clue_card_h + 6
+
+        footer_y = h - 26
+        self.create_rectangle(0, footer_y, w, h, fill="#081018", outline="#1c3347", width=1)
+        self.create_text(20, footer_y + 4, anchor="nw", text="▶ TIP: Klik på en mistænkt for at udnævne som hovedhypotese, eller klik på et spor for dybdegående OT-analyse.", fill="#f6d365", font=("Consolas", 9, "bold"))

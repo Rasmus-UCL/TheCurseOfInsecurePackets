@@ -109,6 +109,41 @@ class GameApp(tk.Tk):
         )
         self.objective_banner.pack(fill="x")
 
+        # 3.5. Four Core Metrics & Investigation Bar (Etape 2 Redesign)
+        self.metrics_bar = tk.Frame(self, bg="#0c1622", padx=12, pady=4, relief="ridge", bd=1)
+        self.metrics_bar.pack(fill="x")
+
+        self.metric_drift_label = tk.Label(
+            self.metrics_bar, text="🔧 Drift: 80%", bg="#0c1622", fg="#4ade80",
+            font=("Segoe UI", 9, "bold"), padx=6,
+        )
+        self.metric_drift_label.pack(side="left")
+
+        self.metric_sikkerhed_label = tk.Label(
+            self.metrics_bar, text="🛡️ Sikkerhed: 25%", bg="#0c1622", fg="#38bdf8",
+            font=("Segoe UI", 9, "bold"), padx=6,
+        )
+        self.metric_sikkerhed_label.pack(side="left")
+
+        self.metric_compliance_label = tk.Label(
+            self.metrics_bar, text="📜 Compliance: 40%", bg="#0c1622", fg="#fbbf24",
+            font=("Segoe UI", 9, "bold"), padx=6,
+        )
+        self.metric_compliance_label.pack(side="left")
+
+        self.metric_tillid_label = tk.Label(
+            self.metrics_bar, text="🤝 Tillid: 50%", bg="#0c1622", fg="#a78bfa",
+            font=("Segoe UI", 9, "bold"), padx=6,
+        )
+        self.metric_tillid_label.pack(side="left")
+
+        self.sagstavle_btn = tk.Button(
+            self.metrics_bar, text="🕵️ Sagstavle (0 spor)", bg="#7c2d12", fg="#fed7aa",
+            activebackground="#9a3412", font=("Segoe UI", 8, "bold"), relief="raised", padx=8,
+            command=self.toggle_sagstavle,
+        )
+        self.sagstavle_btn.pack(side="right", padx=4)
+
         # 4. Dedicated 2D Visual Plant Floor Screen (Height = 330 px)
         self.map = GameCanvas(self, self.engine, on_hotspot_click=self.on_canvas_click, height=330)
         self.map.pack(fill="x", expand=False, padx=12, pady=(4, 2))
@@ -148,11 +183,15 @@ class GameApp(tk.Tk):
         # Execute on engine
         self.engine.handle_command(normalized)
 
-        # Synchronize view mode with active workbench
-        if self.engine.active_workbench:
+        # Synchronize view mode with active workbench or clue board
+        if normalized.lower() in {"sagstavle", "tavle", "board", "case board", "clueboard", "investigation", "efterforskning"}:
+            self.map.view_mode = "clue_board"
+            self.sagstavle_btn.configure(text="🚪 Luk Sagstavle", relief="sunken")
+        elif self.engine.active_workbench:
             self.map.view_mode = self.engine.active_workbench
-        elif normalized.lower() in {"vis rum", "luk workbench", "tilbage", "rum", "forlad workbench"}:
+        elif normalized.lower() in {"vis rum", "luk workbench", "tilbage", "rum", "forlad workbench", "luk sagstavle"}:
             self.map.view_mode = "room"
+            self.sagstavle_btn.configure(relief="raised")
         elif "chapter-1-done" in self.engine.flags and self.map.view_mode == "vfd_workbench":
             self.map.view_mode = "room"
         elif "chapter-2-done" in self.engine.flags and self.map.view_mode == "switch_workbench":
@@ -162,7 +201,37 @@ class GameApp(tk.Tk):
         self.update_mode_button()
         self.update_nav_highlight()
         self.update_objective()
+        self.update_metrics_display()
         self.map.draw()
+
+    def toggle_sagstavle(self) -> None:
+        if self.map.view_mode == "clue_board":
+            self.map.view_mode = "room"
+            self.sagstavle_btn.configure(relief="raised")
+        else:
+            self.map.view_mode = "clue_board"
+            self.sagstavle_btn.configure(text="🚪 Luk Sagstavle", relief="sunken")
+            self.command("sagstavle")
+        self.update_metrics_display()
+        self.map.draw()
+
+    def update_metrics_display(self) -> None:
+        if not hasattr(self.engine, "metrics"):
+            return
+        m = self.engine.metrics
+        drift_color = "#4ade80" if m.drift >= 70 else ("#f59e0b" if m.drift >= 40 else "#ef4444")
+        sec_color = "#38bdf8" if m.sikkerhed >= 70 else ("#f59e0b" if m.sikkerhed >= 40 else "#ef4444")
+        comp_color = "#fbbf24" if m.compliance >= 70 else ("#f59e0b" if m.compliance >= 40 else "#ef4444")
+        tillid_color = "#a78bfa" if m.tillid >= 60 else ("#f59e0b" if m.tillid >= 35 else "#ef4444")
+
+        self.metric_drift_label.configure(text=f"🔧 Drift: {m.drift}%", fg=drift_color)
+        self.metric_sikkerhed_label.configure(text=f"🛡️ Sikkerhed: {m.sikkerhed}%", fg=sec_color)
+        self.metric_compliance_label.configure(text=f"📜 Compliance: {m.compliance}%", fg=comp_color)
+        self.metric_tillid_label.configure(text=f"🤝 Tillid: {m.tillid}%", fg=tillid_color)
+
+        num_clues = len(self.engine.investigation.get_discovered_clues())
+        if self.map.view_mode != "clue_board":
+            self.sagstavle_btn.configure(text=f"🕵️ Sagstavle ({num_clues} spor)")
 
     def toggle_mode(self) -> None:
         self.engine.toggle_game_mode()
@@ -240,6 +309,7 @@ class GameApp(tk.Tk):
         self.update_nav_highlight()
 
     def update_timer_display(self) -> None:
+        self.update_metrics_display()
         audit = self.engine.time_display
         color = "#ef4444" if self.engine.time_remaining <= 60 else "#f6d365"
         self.timer_label.configure(

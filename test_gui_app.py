@@ -118,6 +118,32 @@ def test_gui():
         app.map.draw()
         app.update()
 
+        # Step 15: Test 4-metrics HUD bar (Etape 2)
+        print("  -> Testing 4-metrics HUD bar...")
+        app.update_metrics_display()
+        assert "Drift:" in app.metric_drift_label.cget("text")
+        assert "Sikkerhed:" in app.metric_sikkerhed_label.cget("text")
+        assert "Compliance:" in app.metric_compliance_label.cget("text")
+        assert "Tillid:" in app.metric_tillid_label.cget("text")
+
+        # Step 16: Test Sagstavle view toggle & interactive board (Etape 2)
+        print("  -> Testing Sagstavle toggle and clue board canvas view...")
+        assert app.map.view_mode == "room"
+        app.toggle_sagstavle()
+        app.update()
+        assert app.map.view_mode == "clue_board"
+        assert "Luk Sagstavle" in app.sagstavle_btn.cget("text")
+
+        # Test clicking suspect on clue board
+        app.command("anklag morten_pumper")
+        app.update()
+        assert app.engine.investigation.prime_suspect_id == "morten_pumper"
+
+        # Toggle back to room
+        app.toggle_sagstavle()
+        app.update()
+        assert app.map.view_mode == "room"
+
         app.destroy()
         print("GUI TEST PASSED SUCCESSFULLY! [OK]")
     except tk.TclError as e:
