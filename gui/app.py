@@ -51,8 +51,23 @@ class GameApp(tk.Tk):
     def setup_gameplay_ui(self) -> None:
         """Create all widgets for the live gameplay screen."""
         # 1. Top Header Bar: Simulation Status, Timers & Workweek
-        header = tk.Frame(self.gameplay_container, bg="#0d1822", padx=16, pady=6, relief="ridge", bd=1)
+        header = tk.Frame(self.gameplay_container, bg="#0d1822", padx=14, pady=6, relief="ridge", bd=1)
         header.pack(fill="x")
+
+        # Pinned Prominent Home and Save buttons at top-left
+        self.btn_hovedmenu = tk.Button(
+            header, text="🏠 HOVEDMENU", bg="#0284c7", fg="#ffffff", activebackground="#0369a1",
+            activeforeground="#ffffff", font=("Segoe UI", 9, "bold"), relief="raised", padx=10, pady=2,
+            command=self.prompt_return_to_menu,
+        )
+        self.btn_hovedmenu.pack(side="left", padx=(0, 6))
+
+        self.btn_quick_save = tk.Button(
+            header, text="💾 GEM", bg="#059669", fg="#ffffff", activebackground="#047857",
+            activeforeground="#ffffff", font=("Segoe UI", 9, "bold"), relief="raised", padx=10, pady=2,
+            command=self.quick_save,
+        )
+        self.btn_quick_save.pack(side="left", padx=(0, 14))
 
         tk.Label(
             header, text="THE CURSE OF INSECURE PACKETS",
@@ -127,17 +142,6 @@ class GameApp(tk.Tk):
         tk.Button(
             zone_bar, text="🎒 Rygsæk", bg="#162b3d", fg="#dceaf4",
             font=("Segoe UI", 8, "bold"), relief="groove", padx=6, command=lambda: self.command("inventory"),
-        ).pack(side="right", padx=3)
-
-        # In-Game Save and Main Menu navigation buttons
-        tk.Button(
-            zone_bar, text="💾 Gem", bg="#0f766e", fg="#ccfbf1", activebackground="#115e59",
-            font=("Segoe UI", 8, "bold"), relief="raised", padx=6, command=self.quick_save,
-        ).pack(side="right", padx=3)
-
-        tk.Button(
-            zone_bar, text="🏠 Menu", bg="#334155", fg="#f1f5f9", activebackground="#475569",
-            font=("Segoe UI", 8, "bold"), relief="raised", padx=6, command=self.prompt_return_to_menu,
         ).pack(side="right", padx=3)
 
         # 3. Objective Banner
@@ -746,6 +750,14 @@ class GameApp(tk.Tk):
             self.submit_intro(normalized)
             return
 
+        # Direct menu commands (always available: during gameplay, upon completion, or on game over)
+        if normalized.lower() in {
+            "hovedmenu", "hovemenu", "menu", "hjem", "home",
+            "startskærm", "startskaerm", "afslut til menu", "hoved menu", "main menu"
+        }:
+            self.show_main_menu()
+            return
+
         # Special command window triggers
         if normalized.lower() in {"hjælp", "help", "?"}:
             self.show_help_window()
@@ -766,16 +778,21 @@ class GameApp(tk.Tk):
         # Synchronize view mode with active workbench or clue board
         if normalized.lower() in {"sagstavle", "tavle", "board", "case board", "clueboard", "investigation", "efterforskning"}:
             self.map.view_mode = "clue_board"
+            self.map.configure(height=480)
             self.sagstavle_btn.configure(text="🚪 Luk Sagstavle", relief="sunken")
         elif self.engine.active_workbench:
             self.map.view_mode = self.engine.active_workbench
+            self.map.configure(height=330)
         elif normalized.lower() in {"vis rum", "luk workbench", "tilbage", "rum", "forlad workbench", "luk sagstavle"}:
             self.map.view_mode = "room"
-            self.sagstavle_btn.configure(relief="raised")
+            self.map.configure(height=330)
+            self.sagstavle_btn.configure(relief="raised", text=f"🕵️ Sagstavle ({len(self.engine.investigation.get_discovered_clues())} spor)")
         elif "chapter-1-done" in self.engine.flags and self.map.view_mode == "vfd_workbench":
             self.map.view_mode = "room"
+            self.map.configure(height=330)
         elif "chapter-2-done" in self.engine.flags and self.map.view_mode == "switch_workbench":
             self.map.view_mode = "room"
+            self.map.configure(height=330)
 
         self.terminal.set_prompt_prefix(self.engine.room)
         self.update_mode_button()
@@ -787,9 +804,11 @@ class GameApp(tk.Tk):
     def toggle_sagstavle(self) -> None:
         if self.map.view_mode == "clue_board":
             self.map.view_mode = "room"
-            self.sagstavle_btn.configure(relief="raised")
+            self.map.configure(height=330)
+            self.sagstavle_btn.configure(relief="raised", text=f"🕵️ Sagstavle ({len(self.engine.investigation.get_discovered_clues())} spor)")
         else:
             self.map.view_mode = "clue_board"
+            self.map.configure(height=480)
             self.sagstavle_btn.configure(text="🚪 Luk Sagstavle", relief="sunken")
             self.command("sagstavle")
         self.update_metrics_display()
@@ -838,6 +857,8 @@ class GameApp(tk.Tk):
     def navigate_to(self, room_key: str) -> None:
         if self.map.view_mode != "room":
             self.map.view_mode = "room"
+            self.map.configure(height=330)
+            self.sagstavle_btn.configure(relief="raised", text=f"🕵️ Sagstavle ({len(self.engine.investigation.get_discovered_clues())} spor)")
         self.command(f"gå til {room_key}")
 
     def on_canvas_click(self, hotspot_name: str) -> None:
@@ -854,12 +875,29 @@ class GameApp(tk.Tk):
                 btn.configure(bg="#16293a", fg="#d8e6ed", relief="groove")
 
     def update_objective(self) -> None:
+        if not self.engine.running:
+            if "case-solved-lars" in self.engine.flags or self.engine.chapter == 5:
+                self.objective_banner.configure(
+                    text="🎉 MISSION GENNEMFØRT! Rapport er eksporteret. Klik på '🏠 HOVEDMENU' øverst for at vende tilbage.",
+                    bg="#065f46", fg="#f0fdf4",
+                )
+            else:
+                self.objective_banner.configure(
+                    text="⚠️ MISSIONEN ER AFSLUTTET. Klik på '🏠 HOVEDMENU' øverst for at starte forfra eller hente et gemt spil.",
+                    bg="#7f1d1d", fg="#fee2e2",
+                )
+            return
+
         if self.engine.chapter == 0:
-            self.objective_banner.configure(text="Ansættelsessamtale i gang")
+            self.objective_banner.configure(
+                text="Ansættelsessamtale i gang",
+                bg="#172e42", fg="#dceaf4",
+            )
             return
         obj_text = OBJECTIVES.get(self.engine.chapter, "Gennemfør audit")
         self.objective_banner.configure(
-            text=f"Aktuelt mål (Kapitel {self.engine.chapter}/5): {obj_text}"
+            text=f"Aktuelt mål (Kapitel {self.engine.chapter}/5): {obj_text}",
+            bg="#172e42", fg="#dceaf4",
         )
 
     def introduce(self) -> None:

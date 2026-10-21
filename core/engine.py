@@ -673,14 +673,69 @@ class GameEngine:
     # COMMAND PROCESSING
     # -------------------------------------------------------------------------
     def handle_command(self, command: str) -> None:
-        if not self.check_timers():
-            return
         raw = command.strip()
         if not raw:
-            if self.chapter > 0:
+            if self.chapter > 0 and self.running:
                 self.emit(self.format_choices_text())
             return
         normalized = re.sub(r"\s+", " ", raw.lower())
+
+        # Menu and start screen transitions (always available, even when finished or stopped)
+        if normalized in {
+            "hovedmenu", "hovemenu", "menu", "hjem", "home",
+            "startskærm", "startskaerm", "afslut til menu", "hoved menu", "main menu"
+        }:
+            self.flags.add("return-to-menu")
+            self.emit("\n🏠 [HOVEDMENU]: Vender tilbage til startskærmen...")
+            return
+
+        # Save and Load commands (always available)
+        if normalized in {"gem", "gem spil", "save", "savegame"}:
+            ok, msg = self.save_state()
+            self.emit(msg)
+            return
+        if normalized.startswith("gem "):
+            save_name = normalized.removeprefix("gem ").strip()
+            filepath = os.path.join("saves", f"{save_name}.json" if not save_name.endswith(".json") else save_name)
+            ok, msg = self.save_state(filepath)
+            self.emit(msg)
+            return
+        if normalized in {"hent", "hent spil", "indlæs", "indlaes", "load"}:
+            ok, msg = self.load_state()
+            self.emit(msg)
+            if ok:
+                self.describe_room()
+            return
+        if normalized.startswith("hent ") or normalized.startswith("load ") or normalized.startswith("indlæs ") or normalized.startswith("indlaes "):
+            save_name = normalized.replace("hent ", "").replace("load ", "").replace("indlæs ", "").replace("indlaes ", "").strip()
+            filepath = os.path.join("saves", f"{save_name}.json" if not save_name.endswith(".json") else save_name)
+            ok, msg = self.load_state(filepath)
+            self.emit(msg)
+            if ok:
+                self.describe_room()
+            return
+        if normalized in {"gemte spil", "saves", "vis saves", "list saves"}:
+            saves = self.list_save_files()
+            if not saves:
+                self.emit("Ingen gemte spil fundet i 'saves/' mappen.")
+            else:
+                self.emit("\n💾 [GEMTE SPIL I 'saves/']:")
+                for s in saves:
+                    self.emit(f"  • {s['filename']} ({s['save_time']}) - {s['player_name']} (Kapitel {s['chapter']}/5, {s['game_mode'].upper()})")
+            return
+
+        # If game is stopped or completed, notify user how to return to menu
+        if not self.running:
+            self.emit(
+                "\n💡 [MISSIONEN ER AFSLUTTET]\n"
+                "Tast 'hovedmenu' eller klik på '🏠 HOVEDMENU' øverst for at vende tilbage til startskærmen,\n"
+                "hvor du kan starte en ny mission eller indlæse et tidligere spil."
+            )
+            return
+
+        # Check timers for active simulation
+        if not self.check_timers():
+            return
 
         # Mode toggles
         if normalized in {"tilstand", "mode", "skift tilstand", "toggle mode"}:
@@ -738,37 +793,6 @@ class GameEngine:
             self.submit_early_warning()
         elif normalized in {"eksporter rapport", "eksport rapport", "gem rapport"}:
             self.export_audit_report()
-        elif normalized in {"gem", "gem spil", "save", "savegame"}:
-            ok, msg = self.save_state()
-            self.emit(msg)
-        elif normalized.startswith("gem "):
-            save_name = normalized.removeprefix("gem ").strip()
-            filepath = os.path.join("saves", f"{save_name}.json" if not save_name.endswith(".json") else save_name)
-            ok, msg = self.save_state(filepath)
-            self.emit(msg)
-        elif normalized in {"hent", "hent spil", "indlæs", "indlaes", "load"}:
-            ok, msg = self.load_state()
-            self.emit(msg)
-            if ok:
-                self.describe_room()
-        elif normalized.startswith("hent ") or normalized.startswith("load ") or normalized.startswith("indlæs ") or normalized.startswith("indlaes "):
-            save_name = normalized.replace("hent ", "").replace("load ", "").replace("indlæs ", "").replace("indlaes ", "").strip()
-            filepath = os.path.join("saves", f"{save_name}.json" if not save_name.endswith(".json") else save_name)
-            ok, msg = self.load_state(filepath)
-            self.emit(msg)
-            if ok:
-                self.describe_room()
-        elif normalized in {"gemte spil", "saves", "vis saves", "list saves"}:
-            saves = self.list_save_files()
-            if not saves:
-                self.emit("Ingen gemte spil fundet i 'saves/' mappen.")
-            else:
-                self.emit("\n💾 [GEMTE SPIL I 'saves/']:")
-                for s in saves:
-                    self.emit(f"  • {s['filename']} ({s['save_time']}) - {s['player_name']} (Kapitel {s['chapter']}/5, {s['game_mode'].upper()})")
-        elif normalized in {"hovedmenu", "menu", "afslut til menu"}:
-            self.flags.add("return-to-menu")
-            self.emit("\n🏠 [HOVEDMENU]: Vender tilbage til startskærmen...")
         elif normalized in {"fremlæg sagstavle", "fremlaeg sagstavle", "fremlæg sag", "fremlaeg sag", "fremlæg", "fremlaeg", "afslut efterforskning", "fremlæg beviser", "fremlaeg beviser"}:
             self.present_case_investigation()
         elif normalized.startswith("tshark") or normalized in {"man tshark", "cheat tshark", "tshark cheatsheet", "tshark help"}:

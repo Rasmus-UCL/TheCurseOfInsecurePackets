@@ -133,7 +133,10 @@ def test_gui():
         app.toggle_sagstavle()
         app.update()
         assert app.map.view_mode == "clue_board"
+        assert int(app.map.cget("height")) == 480
         assert "Luk Sagstavle" in app.sagstavle_btn.cget("text")
+        assert "menu_from_clue_board" in app.map.canvas_buttons
+        assert "close_clue_board" in app.map.canvas_buttons
 
         # Test clicking suspect on clue board
         app.command("anklag morten_pumper")
@@ -144,6 +147,11 @@ def test_gui():
         app.toggle_sagstavle()
         app.update()
         assert app.map.view_mode == "room"
+        assert int(app.map.cget("height")) == 330
+
+        # Verify prominent Top Header Bar buttons
+        assert app.btn_hovedmenu.winfo_exists()
+        assert app.btn_quick_save.winfo_exists()
 
         # Step 17: Test In-Game Quicksave
         print("  -> Testing in-game quicksave...")
@@ -180,10 +188,14 @@ def test_gui():
         assert app.engine.player.name == "Christian"
         assert app.engine.chapter == 2
 
-        # Step 21: Test returning to menu via terminal command
-        print("  -> Testing terminal command 'hovedmenu'...")
-        app.command("hovedmenu")
+        # Step 21: Test returning to menu via terminal command (including 'hovemenu' typo and when running=False)
+        print("  -> Testing terminal command 'hovemenu' when game is ended/finished...")
+        app.engine.running = False
+        app.update_objective()
+        assert "MISSION" in app.objective_banner.cget("text")
+        app.command("hovemenu")
         app.update()
+
         # Clean up test save file
         if os.path.exists(expected_save):
             os.remove(expected_save)

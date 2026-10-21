@@ -643,126 +643,147 @@ class GameCanvas(tk.Canvas):
     # -------------------------------------------------------------------------
     # 4. INVESTIGATION CASE BOARD VIEW (SAGSTAVLE)
     # -------------------------------------------------------------------------
+    # DEDICATED CLUE BOARD / INVESTIGATION SAGSTAVLE VIEW
+    # -------------------------------------------------------------------------
     def draw_clue_board(self, w: int, h: int) -> None:
         # Corkboard / slate detective background
         self.create_rectangle(0, 0, w, h, fill="#121820", outline="")
 
         # Top Header Bar
-        self.create_rectangle(0, 0, w, 54, fill="#1c2430", outline="#2e3b4e", width=1)
+        self.create_rectangle(0, 0, w, 50, fill="#1c2430", outline="#2e3b4e", width=1)
         self.create_text(
-            20, 12, anchor="nw",
+            16, 10, anchor="nw",
             text="🕵️ SAGSTAVLE – EFTERFORSKNING AF NORDIC H2O CYBERSABOTAGEN",
             fill="#f6d365", font=("Consolas", 12, "bold"),
         )
 
         m = self.engine.metrics
         self.create_text(
-            20, 34, anchor="nw",
+            16, 30, anchor="nw",
             text=f"Aktuel status: Drift {m.drift}%  |  Sikkerhed {m.sikkerhed}%  |  Compliance {m.compliance}%  |  Tillid {m.tillid}%",
             fill="#94a3b8", font=("Segoe UI", 8),
         )
 
-        # Close / Return button
-        btn_w = 200
-        btn_x1 = w - btn_w - 20
-        btn_x2 = w - 20
-        self.create_rectangle(btn_x1, 10, btn_x2, 42, fill="#1e293b", outline="#38bdf8", width=1)
-        self.create_text((btn_x1 + btn_x2) // 2, 26, text="⬅️ Tilbage til Anlægget", fill="#e0f2fe", font=("Segoe UI", 9, "bold"))
-        self.canvas_buttons["close_clue_board"] = (btn_x1, 10, btn_x2, 42, lambda: self.master_app.toggle_sagstavle())
+        # Header Buttons: [ 🏠 Hovedmenu ] and [ ⬅️ Tilbage til Anlægget ]
+        btn_w = 175
+        btn_x2 = w - 16
+        btn_x1 = btn_x2 - btn_w
+        self.create_rectangle(btn_x1, 8, btn_x2, 42, fill="#1e293b", outline="#38bdf8", width=1)
+        self.create_text((btn_x1 + btn_x2) // 2, 25, text="⬅️ Tilbage til Anlægget", fill="#e0f2fe", font=("Segoe UI", 9, "bold"))
+        self.canvas_buttons["close_clue_board"] = (btn_x1, 8, btn_x2, 42, lambda: self.master_app.toggle_sagstavle())
 
-        # Column 1: Mistænkte & Hypoteser (Left ~42%)
-        col1_w = int(w * 0.44)
-        self.create_rectangle(15, 62, col1_w, h - 30, fill="#0d131a", outline="#1f2937", width=1)
-        self.create_text(25, 70, anchor="nw", text="👥 MISTÆNKTE & HYPOTESER (Klik for at anklage):", fill="#f6d365", font=("Segoe UI", 9, "bold"))
+        home_w = 130
+        home_x2 = btn_x1 - 10
+        home_x1 = home_x2 - home_w
+        self.create_rectangle(home_x1, 8, home_x2, 42, fill="#0284c7", outline="#38bdf8", width=1)
+        self.create_text((home_x1 + home_x2) // 2, 25, text="🏠 Hovedmenu", fill="#ffffff", font=("Segoe UI", 9, "bold"))
+        self.canvas_buttons["menu_from_clue_board"] = (home_x1, 8, home_x2, 42, lambda: self.master_app.prompt_return_to_menu())
+
+        top_y = 56
+        footer_y = h - 26
+        bottom_y = footer_y - 6
+        avail_h = max(200, bottom_y - top_y)
+
+        # Column 1: Mistænkte & Hypoteser (Left ~38%)
+        col1_w = int(w * 0.38)
+        self.create_rectangle(12, top_y, col1_w, bottom_y, fill="#0d131a", outline="#1f2937", width=1)
+        self.create_text(20, top_y + 6, anchor="nw", text="👥 MISTÆNKTE (Klik for at anklage):", fill="#f6d365", font=("Segoe UI", 9, "bold"))
 
         suspects = sorted(self.engine.investigation.suspects.values(), key=lambda x: x.suspicion_score, reverse=True)
-        s_y = 95
-        card_h = 42
-        for s in suspects:
+        s_start_y = top_y + 26
+        s_avail_h = bottom_y - s_start_y
+        s_gap = 4 if s_avail_h < 260 else 6
+        s_card_h = max(34, int((s_avail_h - 4 * s_gap) / 5))
+
+        for idx, s in enumerate(suspects):
             s_bg = "#271d18" if s.status == "Hovedmistænkt" else "#141c24"
             border_c = "#f59e0b" if s.status == "Hovedmistænkt" else "#253342"
             border_w = 2 if s.status == "Hovedmistænkt" else 1
 
-            self.create_rectangle(22, s_y, col1_w - 8, s_y + card_h, fill=s_bg, outline=border_c, width=border_w)
+            cy1 = s_start_y + idx * (s_card_h + s_gap)
+            cy2 = cy1 + s_card_h
+            cx1 = 18
+            cx2 = col1_w - 6
+
+            self.create_rectangle(cx1, cy1, cx2, cy2, fill=s_bg, outline=border_c, width=border_w)
             star = "⭐ " if s.status == "Hovedmistænkt" else ""
-            self.create_text(28, s_y + 4, anchor="nw", text=f"{star}{s.name}", fill="#f8fafc", font=("Segoe UI", 8, "bold"))
-            self.create_text(28, s_y + 20, anchor="nw", text=f"{s.role[:38]}", fill="#94a3b8", font=("Segoe UI", 7))
+            self.create_text(cx1 + 6, cy1 + 3, anchor="nw", text=f"{star}{s.name}", fill="#f8fafc", font=("Segoe UI", 8, "bold"))
+            self.create_text(cx1 + 6, cy1 + 18, anchor="nw", text=f"{s.role[:32]}", fill="#94a3b8", font=("Segoe UI", 7))
 
             # Suspicion meter
-            meter_w = 70
-            meter_x1 = col1_w - 18 - meter_w
-            meter_x2 = col1_w - 18
-            meter_y1 = s_y + 12
-            meter_y2 = s_y + 24
+            meter_w = 58
+            meter_x1 = cx2 - meter_w - 8
+            meter_x2 = cx2 - 8
+            meter_y1 = cy1 + 8
+            meter_y2 = cy1 + 22
             self.create_rectangle(meter_x1, meter_y1, meter_x2, meter_y2, fill="#0f172a", outline="#334155")
             filled_w = int((s.suspicion_score / 100) * meter_w)
             meter_col = "#ef4444" if s.suspicion_score >= 50 else ("#f59e0b" if s.suspicion_score >= 30 else "#38bdf8")
             if filled_w > 0:
                 self.create_rectangle(meter_x1, meter_y1, meter_x1 + filled_w, meter_y2, fill=meter_col, outline="")
-            self.create_text(meter_x1 + meter_w // 2, meter_y1 + 6, text=f"{s.suspicion_score}%", fill="white", font=("Segoe UI", 7, "bold"))
+            self.create_text(meter_x1 + meter_w // 2, meter_y1 + 7, text=f"{s.suspicion_score}%", fill="white", font=("Segoe UI", 7, "bold"))
 
             # Click suspect to accuse / set prime
             btn_id = f"susp_{s.id}"
-            self.canvas_buttons[btn_id] = (22, s_y, col1_w - 8, s_y + card_h, lambda sid=s.id: self.master_app.command(f"anklag {sid}"))
-            s_y += card_h + 6
+            self.canvas_buttons[btn_id] = (cx1, cy1, cx2, cy2, lambda sid=s.id: self.master_app.command(f"anklag {sid}"))
 
-        # Column 2: Opdagede Spor (Right ~58%)
-        col2_x1 = col1_w + 12
-        col2_x2 = w - 15
-        self.create_rectangle(col2_x1, 62, col2_x2, h - 30, fill="#0d131a", outline="#1f2937", width=1)
+        # Column 2: Opdagede Spor (Right ~62% - 2-Column Grid of up to 10 clues)
+        col2_x1 = col1_w + 10
+        col2_x2 = w - 12
+        self.create_rectangle(col2_x1, top_y, col2_x2, bottom_y, fill="#0d131a", outline="#1f2937", width=1)
 
         discovered = self.engine.investigation.get_discovered_clues()
         total_clues = len(self.engine.investigation.clues)
         self.create_text(
-            col2_x1 + 12, 70, anchor="nw",
-            text=f"🔍 OPDAGEDE SPOR ({len(discovered)} af {total_clues} fundet - Klik for analyse):",
+            col2_x1 + 10, top_y + 6, anchor="nw",
+            text=f"🔍 OPDAGEDE SPOR ({len(discovered)} af {total_clues} fundet — Klik for analyse):",
             fill="#f6d365", font=("Segoe UI", 9, "bold"),
         )
 
-        if not discovered:
-            # Blank corkboard note
-            p_x1, p_y1 = col2_x1 + 25, 105
-            p_x2, p_y2 = col2_x2 - 25, 230
-            self.create_rectangle(p_x1, p_y1, p_x2, p_y2, fill="#1c1917", outline="#78716c", width=1, dash=(4, 4))
-            self.create_text(
-                p_x1 + 20, p_y1 + 25, anchor="nw",
-                text="Ingen spor fundet endnu!\n\n"
-                     "1. Kør 'tshark' i Pumpehuset for at fange Modbus-sabotagen.\n"
-                     "2. Undersøg kabelbakken i Ventil-øen for skjult hardware.\n"
-                     "3. Inspicér PLC'ens diagnostic buffer i El-tavlen.\n"
-                     "4. Tal med Hans McDonald om mistænkelig adfærd.",
-                fill="#fbbf24", font=("Segoe UI", 9),
-            )
-        else:
-            c_y = 96
-            clue_card_h = 36
-            cat_colors = {
-                "Netværk": "#0284c7",
-                "Fysisk": "#b45309",
-                "Systemlog": "#7c3aed",
-                "Vidneudsagn": "#15803d",
-                "Konfiguration": "#475569",
-            }
-            for idx, c in enumerate(discovered[:6]):
-                cc_x1 = col2_x1 + 10
-                cc_x2 = col2_x2 - 10
-                cc_y1 = c_y
-                cc_y2 = c_y + clue_card_h
+        c_start_y = top_y + 26
+        c_avail_h = bottom_y - c_start_y
+        c_gap = 4 if c_avail_h < 260 else 6
+        c_card_h = max(34, int((c_avail_h - 4 * c_gap) / 5))
+        sub_col_w = int((col2_x2 - col2_x1 - 22) / 2)
+
+        cat_colors = {
+            "Netværk": "#0284c7",
+            "Fysisk": "#b45309",
+            "Systemlog": "#7c3aed",
+            "Vidneudsagn": "#15803d",
+            "Konfiguration": "#475569",
+        }
+
+        # Render 10 slots (2 columns of 5 rows)
+        for idx in range(10):
+            row = idx % 5
+            col = idx // 5
+            cx1 = (col2_x1 + 6) if col == 0 else (col2_x1 + 14 + sub_col_w)
+            cx2 = cx1 + sub_col_w
+            cy1 = c_start_y + row * (c_card_h + c_gap)
+            cy2 = cy1 + c_card_h
+
+            if idx < len(discovered):
+                c = discovered[idx]
                 cat_col = cat_colors.get(c.category, "#334155")
+                self.create_rectangle(cx1, cy1, cx2, cy2, fill="#16202c", outline="#253545", width=1)
 
-                self.create_rectangle(cc_x1, cc_y1, cc_x2, cc_y2, fill="#16202c", outline="#253545", width=1)
-                # Category pill badge
-                self.create_rectangle(cc_x1 + 6, cc_y1 + 8, cc_x1 + 80, cc_y1 + 28, fill=cat_col, outline="")
-                self.create_text(cc_x1 + 43, cc_y1 + 18, text=c.category.upper(), fill="white", font=("Segoe UI", 7, "bold"))
+                # Category badge
+                self.create_rectangle(cx1 + 4, cy1 + 6, cx1 + 62, cy1 + 22, fill=cat_col, outline="")
+                self.create_text(cx1 + 33, cy1 + 14, text=c.category[:7].upper(), fill="white", font=("Segoe UI", 7, "bold"))
 
-                # Title & room
-                self.create_text(cc_x1 + 90, cc_y1 + 6, anchor="nw", text=c.title[:45], fill="#f8fafc", font=("Segoe UI", 8, "bold"))
-                self.create_text(cc_x1 + 90, cc_y1 + 20, anchor="nw", text=f"Fundet i: {c.discovery_room} ({c.discovered_time}) - Klik for analyse", fill="#64748b", font=("Segoe UI", 7))
+                # Title and room
+                self.create_text(cx1 + 68, cy1 + 3, anchor="nw", text=c.title[:28], fill="#f8fafc", font=("Segoe UI", 8, "bold"))
+                self.create_text(cx1 + 68, cy1 + 18, anchor="nw", text=f"{c.discovery_room} • Klik for analyse", fill="#38bdf8", font=("Segoe UI", 7))
 
                 btn_id = f"clue_{c.id}"
-                self.canvas_buttons[btn_id] = (cc_x1, cc_y1, cc_x2, cc_y2, lambda cid=c.id: self.master_app.command(f"analyser spor {cid}"))
-                c_y += clue_card_h + 6
+                self.canvas_buttons[btn_id] = (cx1, cy1, cx2, cy2, lambda cid=c.id: self.master_app.command(f"analyser spor {cid}"))
+            else:
+                # Undiscovered clue slot placeholder
+                self.create_rectangle(cx1, cy1, cx2, cy2, fill="#0a1016", outline="#1c2836", width=1, dash=(3, 3))
+                self.create_text(cx1 + 8, cy1 + 4, anchor="nw", text=f"🔒 Spor #{idx + 1}: Endnu ikke fundet", fill="#64748b", font=("Segoe UI", 7, "bold"))
+                self.create_text(cx1 + 8, cy1 + 18, anchor="nw", text="Gennemsøg netværk og komponenter", fill="#475569", font=("Segoe UI", 7, "italic"))
 
         footer_y = h - 26
         self.create_rectangle(0, footer_y, w, h, fill="#081018", outline="#1c3347", width=1)
-        self.create_text(20, footer_y + 4, anchor="nw", text="▶ TIP: Klik på en mistænkt for at udnævne som hovedhypotese, eller klik på et spor for dybdegående OT-analyse.", fill="#f6d365", font=("Consolas", 9, "bold"))
+        self.create_text(16, footer_y + 4, anchor="nw", text="▶ TIP: Klik på en mistænkt for at udnævne som arbejdshypotese, eller klik på et spor for analyse. Tryk '⬅️ Tilbage' for anlægsvisning.", fill="#f6d365", font=("Consolas", 8, "bold"))
