@@ -474,6 +474,169 @@ def test_narrative_metrics_and_investigation_board():
     print("  -> Passed.")
 
 
+def test_investigative_chapter_flow_and_finale():
+    print("Test 13: Narrative investigative inquiry across all 5 chapters & Grand Finale (Etape 4)...")
+    logs = []
+    engine = GameEngine(output=logs.append)
+    engine.start("Frederik", "Automationsteknolog & IT-Sikkerhed")
+
+    # --- CHAPTER 1: Pumpehuset (Observation -> Data -> Interrogation -> Remediation) ---
+    engine.handle_command("gå til pumpehuset")
+    p_room = ALL_ROOMS["pumpehuset"]
+    desc1 = p_room.get_description(engine)
+    assert "Kavitationen er ved at pulverisere pumpehjulet" in desc1
+
+    # Observation
+    engine.handle_command("undersøg pumpe 2")
+    assert engine.investigation.get_clue("spor_manometer_rystelser").discovered is True
+
+    # Dataindsamling
+    engine.handle_command("tshark -Y \"modbus\"")
+    assert engine.investigation.get_clue("spor_modbus_flood").discovered is True
+
+    # Afhøring
+    engine.handle_command("spørg hans om morten")
+    assert engine.investigation.get_clue("spor_morten_rapport").discovered is True
+
+    # Early warning submission
+    engine.handle_command("indberet hændelse")
+
+    # Remediation
+    engine.handle_command("firewall rule add --allow-fc 3 --drop-fc 6")
+    assert engine.chapter == 2
+    assert "chapter-1-done" in engine.flags
+
+    # Verify Chapter 1 done description
+    desc1_done = p_room.get_description(engine)
+    assert "Pumpehuset summer roligt" in desc1_done
+
+    # --- CHAPTER 2: Ventil-øen ---
+    engine.handle_command("gå til ventil-oen")
+    v_room = ALL_ROOMS["ventil-oen"]
+    desc2 = v_room.get_description(engine)
+    assert "Festo-ventiler smælder op og i" in desc2
+
+    # Dataindsamling
+    engine.handle_command("åbn wireshark")
+    assert engine.investigation.get_clue("spor_dcp_storm").discovered is True
+    assert engine.investigation.get_clue("spor_mac_oui").discovered is True
+
+    # Fysisk undersøgelse
+    engine.handle_command("undersøg kabelbakke")
+    assert "pi-revealed" in engine.flags
+    assert engine.investigation.get_clue("spor_sort_boks").discovered is True
+
+    # Afhøring
+    engine.handle_command("spørg hans om lars")
+
+    # Remediation: Forensisk sikring i Faraday pose
+    engine.handle_command("sikr pi i faraday-pose")
+    assert "pi-removed" in engine.flags
+
+    # Udskift med SCALANCE switch
+    engine.handle_command("udskift switch med scalance")
+    assert engine.chapter == 3
+    assert "chapter-2-done" in engine.flags
+
+    # --- CHAPTER 3: Hoved-el-tavlen ---
+    engine.handle_command("gå til el-tavlen")
+    e_room = ALL_ROOMS["el-tavlen"]
+    desc3 = e_room.get_description(engine)
+    assert "CPU 1516F" in desc3
+    assert "STOP-diode" in desc3
+
+    # Observation
+    engine.handle_command("undersøg s7-1500")
+    assert engine.investigation.get_clue("spor_plc_stop_buffer").discovered is True
+
+    # Undersøg USB
+    engine.handle_command("undersøg usb")
+    assert engine.investigation.get_clue("spor_usb_backup").discovered is True
+
+    # Remediation: Offline backup + TIA Portal hardening
+    engine.handle_command("tag offline backup")
+    assert "backup-taken" in engine.flags
+    engine.handle_command("konfigurer tia portal")
+    assert engine.chapter == 4
+    assert "chapter-3-done" in engine.flags
+
+    # --- CHAPTER 4: Kontrolrummet ---
+    engine.handle_command("gå til kontrolrummet")
+    k_room = ALL_ROOMS["kontrolrummet"]
+    desc4 = k_room.get_description(engine)
+    assert "4G-router" in desc4
+    assert "OPC UA" in desc4
+
+    # Observation
+    engine.handle_command("undersøg scada pc")
+    assert engine.investigation.get_clue("spor_kim_nattevagt").discovered is True
+
+    # Dataindsamling
+    engine.handle_command("undersøg 4g-router")
+    assert engine.investigation.get_clue("spor_4g_dongle").discovered is True
+    engine.handle_command("åbn wireshark")
+    assert engine.investigation.get_clue("spor_opc_leak").discovered is True
+
+    # Afhøring
+    engine.handle_command("spørg hans om kim")
+
+    # Remediation
+    engine.handle_command("frakobl 4g-router")
+    engine.handle_command("godkend scada certifikat")
+    engine.handle_command("aktiver opc kryptering")
+    engine.handle_command("deaktiver anonymous opc")
+    assert engine.chapter == 5
+    assert "chapter-4-done" in engine.flags
+
+    # --- CHAPTER 5: Hovedindgangen & Finale ---
+    engine.handle_command("gå til indgangen")
+    i_room = ALL_ROOMS["indgangen"]
+    desc5 = i_room.get_description(engine)
+    assert "Tilsynets chefinspektør Kirsten" in desc5
+
+    # 1. Test presentation without prime suspect prompts player
+    logs.clear()
+    engine.handle_command("fremlæg sagstavle")
+    assert "SAGSTAVLE MANGLER HOVEDMISTÆNKT" in "\n".join(logs)
+
+    # 2. Accuse Lars Kofoed
+    logs.clear()
+    engine.handle_command("anklag lars_ex_tekniker")
+    assert "primære arbejdshypotese" in "\n".join(logs)
+
+    # 3. Present case with Lars
+    logs.clear()
+    engine.handle_command("fremlæg sagstavle")
+    case_output = "\n".join(logs)
+    assert "DEN STORE KONFRONTATION" in case_output
+    assert "Lars Kofoed" in case_output
+    assert "Rigspolitiets Nationale Cyber Crime Center (NC3)" in case_output
+    assert "case-solved-lars" in engine.flags
+
+    # 4. Carry out final audit with Kirsten and Hans
+    logs.clear()
+    engine.handle_command("revisor")
+    audit_output = "\n".join(logs)
+    assert "MILJØ- OG CYBERSIKKERHEDSTILSYNET – AFSLUTTENDE NIS2 AUDIT-DEKRET" in audit_output
+    assert "EVALUERING AF ANLÆGGETS 4 HOVEDMETRIKKER" in audit_output
+    assert "HANS MCDONALDS DRIFTSDEBRIEFING" in audit_output
+    assert "messing-nøglering" in audit_output
+    assert "SPILLET ER GENNEMFØRT" in audit_output
+    assert engine.running is False
+
+    # 5. Verify exported report contents
+    assert os.path.exists("NIS2_Audit_Rapport_NordicH2O.md")
+    with open("NIS2_Audit_Rapport_NordicH2O.md", "r", encoding="utf-8") as f:
+        report_content = f.read()
+    assert "Frederik" in report_content
+    assert "Lars Kofoed" in report_content
+    assert "Hovedmetrikker for Anlæg og Drift" in report_content
+    assert "UCL Faglige Læringsmål" in report_content
+    assert "Purdue Modellen & IEC 62443" in report_content
+
+    print("  -> Passed.")
+
+
 if __name__ == "__main__":
     test_purdue_and_iec()
     test_sniffer_and_wireshark()
@@ -487,4 +650,5 @@ if __name__ == "__main__":
     test_teach_vs_exam_modes_and_shuffling()
     test_tshark_and_scada_blindness_rule()
     test_narrative_metrics_and_investigation_board()
+    test_investigative_chapter_flow_and_finale()
     print("\nALL MECHANICS TESTS PASSED SUCCESSFULLY! [OK]")

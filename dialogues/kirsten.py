@@ -152,3 +152,81 @@ class KirstenDialogue:
             lines.append(f"  • {r}")
 
         return "\n".join(lines)
+
+    def format_final_verdict(
+        self,
+        passed: bool,
+        score: int,
+        metrics: Any,
+        remarks: list[str],
+        prime_suspect_id: str | None,
+    ) -> str:
+        """Kirsten's comprehensive regulatory decree evaluating all 4 dimensions and the investigation."""
+        lines = []
+        drift = getattr(metrics, "drift", 50)
+        sikkerhed = getattr(metrics, "sikkerhed", 50)
+        compliance = getattr(metrics, "compliance", 50)
+        tillid = getattr(metrics, "tillid", 50)
+
+        lines.extend([
+            "================================================================================",
+            "        ⚖️  MILJØ- OG CYBERSIKKERHEDSTILSYNET – AFSLUTTENDE NIS2 AUDIT-DEKRET   ",
+            "================================================================================",
+            f"Væsentlig Enhed: Nordic H2O Utility A/S (Drikkevandsforsyning)",
+            f"Tilsynsførende:   Chefinspektør Kirsten, Cybersikkerhedstilsynet",
+            f"Audit-score:     {score} / 100 point  (Krav til godkendelse: min. 80 point)",
+            "--------------------------------------------------------------------------------",
+            "📊 EVALUERING AF ANLÆGGETS 4 HOVEDMETRIKKER:",
+            f"  • 🔧 Drift:      [{drift:3d}%] - {'✅ Oppetid & vandforsyning sikret' if drift >= 75 else '⚠️ Driftstab eller kavitationsslitage'}",
+            f"  • 🛡️ Sikkerhed:  [{sikkerhed:3d}%] - {'✅ IEC 62443 zoner & conduits hærdet (SL-2)' if sikkerhed >= 75 else '⚠️ Åbne sårbarheder i zonerne'}",
+            f"  • 📜 Compliance: [{compliance:3d}%] - {'✅ NIS2 Artikel 21/23 procedurer fuldt overholdt' if compliance >= 75 else '⚠️ Mangelfuld dokumentation eller fristoverskridelse'}",
+            f"  • 🤝 Tillid:     [{tillid:3d}%] - {'✅ Stærkt tværfagligt samarbejde med driften' if tillid >= 75 else '⚠️ Samarbejdsvanskeligheder under krisestyringen'}",
+            "--------------------------------------------------------------------------------",
+            "🔍 EFTERFORSKNINGENS KONKLUSION:",
+        ])
+
+        if prime_suspect_id == "lars_ex_tekniker":
+            lines.append("  • Gerningsmand:  Lars Kofoed (Tidligere automationstekniker) -> ✅ KORREKT IDENTIFICERET!")
+            lines.append("    Status:        Sagen er overdraget til Rigspolitiets NC3 med beslaglagt bevismateriale.")
+        elif prime_suspect_id:
+            lines.append(f"  • Gerningsmand:  {prime_suspect_id} -> ⚠️ VILDLEDT ELLER UFULDSTÆNDIG HYPOTESE.")
+            lines.append("    Status:        Den reelle bagmand (Lars Kofoed) undslap i første omgang.")
+        else:
+            lines.append("  • Gerningsmand:  INGEN HOVEDMISTÆNKT UDPEGET.")
+            lines.append("    Status:        Efterforskningen mangler formel anklage.")
+
+        lines.extend([
+            "--------------------------------------------------------------------------------",
+            "📋 KIRSTENS REVISIONSPUNKTER (NIS2 ARTIKEL 21 & 23):",
+        ])
+        for r in remarks:
+            icon = "✅" if not any(w in r for w in {"Mangler", "Manglende", "KRITISK", "FEJL", "fejl", "står", "blindet"}) else "❌"
+            lines.append(f"  {icon} {r}")
+
+        lines.append("--------------------------------------------------------------------------------")
+
+        if passed and score >= 90 and drift >= 70 and sikkerhed >= 70:
+            lines.extend([
+                "🏆 [RESULTAT: AKKREDITERET MED UDMÆRKELSE - GULDSTANDARD]:",
+                "Kirsten letter på læsebrillerne og trykker sit grønne certifikatstempel:",
+                "\"Et forbilledligt stykke arbejde! Du har demonstreret, hvordan fremtidens automationsingeniører",
+                "forener dyb OT-procesforståelse (bits & bar) med kompromisløs cybersikkerhed og retsmedicinsk omhu.",
+                "Nordic H2O Utility tildeles fuld 3-årig NIS2 driftstilladelse uden anmærkninger!\"",
+            ])
+        elif passed:
+            lines.extend([
+                "🏆 [RESULTAT: AUDIT BESTÅET - DRIFTSTILLADELSE FORLÆNGET]:",
+                "Kirsten sætter sit godkendelsesstempel:",
+                "\"Kravene i NIS2 Artikel 21 er opfyldt på et acceptabelt niveau. Værket kan fortsætte driften.",
+                "Følg op på de resterende anmærkninger inden næste kvartalsgennemgang.\"",
+            ])
+        else:
+            lines.extend([
+                "❌ [RESULTAT: AUDIT DUMPET - DRIFTSTILLADELSE INDDRAGET]:",
+                "Kirsten ryster alvorligt på hovedet og trækker det røde forseglingsbånd frem:",
+                "\"Dette anlæg overholder ikke minimumskravene i NIS2 Artikel 21. Risikoen for byens drikkevand",
+                "er uacceptabel høj. Der udstedes straks standsningspåbud jf. NIS2 Artikel 32!\"",
+            ])
+
+        lines.append("================================================================================")
+        return "\n".join(lines)

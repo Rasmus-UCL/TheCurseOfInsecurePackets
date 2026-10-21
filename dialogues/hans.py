@@ -229,3 +229,53 @@ class HansDialogue:
             "At en angriber ikke kender IP-adressen på forhånd, stopper dem i præcis fire sekunder med Wireshark eller tshark!'"
         ]
         return random.choice(anecdotes)
+
+    def get_final_verdict_reaction(self, metrics: Any, prime_suspect_id: str | None) -> str:
+        """Hans' concluding speech based on Drift, Tillid, and who was caught."""
+        lines = []
+        drift = getattr(metrics, "drift", 50)
+        tillid = getattr(metrics, "tillid", 50)
+
+        lines.append("\n☕ [HANS MCDONALDS DRIFTSDEBRIEFING]:")
+        if drift >= 75:
+            lines.append(
+                f"Hans slår ud med armene og smiler bredt:\n"
+                f"\"🔧 DRIFT ({drift}%): Byens vandforsyning står klippefast! Trykket på Pumpe 2 ligger snorlige på 42.0 Bar, "
+                f"kavitationen blev kvalt i fødslen, og vi har ikke haft et eneste sekunds udfald for borgerne.\""
+            )
+        else:
+            lines.append(
+                f"Hans ryster på hovedet med bekymret mine:\n"
+                f"\"🔧 DRIFT ({drift}%): Pumperne og rørledningerne tog hårdt skade af de hydrauliske stød og afbrydelser. "
+                f"Vi må have pumperne adskilt og lejerne efterset i næste uge.\""
+            )
+
+        if tillid >= 75:
+            lines.append(
+                f"\n🤝 TILLID & PARTNERSKAB ({tillid}%):\n"
+                f"\"Jeg indrømmer blankt, jeg var skeptisk da du trådte ind ad døren med din laptop. Sikkerhedsfolk plejer bare at "
+                f"trække stik og gøre hverdagen besværlig for os i driften. Men du lyttede til os, der kender anlægget, "
+                f"og du lærte os hvorfor en conduit og et certifikat redder os mod cyberangreb. "
+                f"Tag min gamle 'Nordic H2O' messing-nøglering her – den har åbnet tavlerne siden '98. Du er altid velkommen på værket!\""
+            )
+        elif tillid >= 50:
+            lines.append(
+                f"\n🤝 TILLID & PARTNERSKAB ({tillid}%):\n"
+                f"\"Vi fik da anlægget igennem ugen, makker. Samarbejdet kradsede lidt indimellem, men vi nåede i mål. "
+                f"Næste gang må du godt advare os, inden du piller ved netværkskablerne.\""
+            )
+        else:
+            lines.append(
+                f"\n🤝 TILLID & PARTNERSKAB ({tillid}%):\n"
+                f"\"Det har været en hård uge for driften. Vi følte os mere som mistænkte end som kollegaer. "
+                f"Cybersikkerhed må aldrig blive en krig mod dem, der holder fabrikken kørende.\""
+            )
+
+        if prime_suspect_id == "lars_ex_tekniker":
+            lines.append(
+                f"\n🎯 OM GERNINSMANDEN (LARS KOFOED):\n"
+                f"\"Stakkels Lars... Han var sgu en dygtig automationstekniker, men bitterhed og såret stolthed gjorde ham blind. "
+                f"Godt du fik stoppet ham før han sprængte vores rørnetværk i stumper og stykker.\""
+            )
+
+        return "\n".join(lines)

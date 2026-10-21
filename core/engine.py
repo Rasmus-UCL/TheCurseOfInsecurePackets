@@ -442,6 +442,8 @@ class GameEngine:
             self.submit_early_warning()
         elif normalized in {"eksporter rapport", "eksport rapport", "gem rapport"}:
             self.export_audit_report()
+        elif normalized in {"fremlæg sagstavle", "fremlaeg sagstavle", "fremlæg sag", "fremlaeg sag", "fremlæg", "fremlaeg", "afslut efterforskning", "fremlæg beviser", "fremlaeg beviser"}:
+            self.present_case_investigation()
         elif normalized.startswith("tshark") or normalized in {"man tshark", "cheat tshark", "tshark cheatsheet", "tshark help"}:
             self.flags.add("wireshark-open")
             if self.room == "pumpehuset":
@@ -449,6 +451,10 @@ class GameEngine:
             elif self.room == "ventil-oen":
                 self.record_clue("spor_dcp_storm")
                 self.record_clue("spor_mac_oui")
+            elif self.room == "el-tavlen":
+                self.record_clue("spor_plc_stop_buffer")
+            elif self.room == "kontrolrummet":
+                self.record_clue("spor_opc_leak")
             self.emit(self.sniffer.execute_tshark_command(raw, self.room, engine=self))
         elif normalized.startswith("wireshark filter "):
             filt = normalized.removeprefix("wireshark filter ").strip()
@@ -458,6 +464,10 @@ class GameEngine:
             elif self.room == "ventil-oen":
                 self.record_clue("spor_dcp_storm")
                 self.record_clue("spor_mac_oui")
+            elif self.room == "el-tavlen":
+                self.record_clue("spor_plc_stop_buffer")
+            elif self.room == "kontrolrummet":
+                self.record_clue("spor_opc_leak")
             self.emit(f"💡 [TSHARK INFO]: I terminalen anvendes 'tshark -Y \"{filt}\"'. Kører filter for dig:")
             self.emit(self.sniffer.execute_tshark_command(f"tshark -Y \"{filt}\"", self.room, engine=self))
         elif normalized.startswith("wireshark detaljer "):
@@ -472,6 +482,10 @@ class GameEngine:
             elif self.room == "ventil-oen":
                 self.record_clue("spor_dcp_storm")
                 self.record_clue("spor_mac_oui")
+            elif self.room == "el-tavlen":
+                self.record_clue("spor_plc_stop_buffer")
+            elif self.room == "kontrolrummet":
+                self.record_clue("spor_opc_leak")
             self.emit(f"💡 [TSHARK INFO]: Kører tshark på '{self.room}_vlan'... (Skriv 'man tshark' for filtre som f.eks. -Y \"modbus\")")
             self.emit(self.sniffer.execute_tshark_command("tshark", self.room, engine=self))
         elif normalized.startswith("spørg hans om ") or normalized.startswith("afhør hans om ") or normalized.startswith("spoerg hans om "):
@@ -1096,6 +1110,21 @@ class GameEngine:
             self.record_clue("spor_4g_dongle")
             self.emit("Teltonika RUT950 4G-router. Den er tilsluttet en ekstern mobilmast og har en aktiv VPN-tunnel til udlandet.")
             return
+        if "scada" in norm or "wincc" in norm or "arbejdsstation" in norm:
+            self.record_clue("spor_kim_nattevagt")
+            self.emit(
+                "WinCC SCADA PC: Hændelsesloggen viser, at operatørkonto 'kdahl' (Kim Dahl) "
+                "loggede ind kl. 03:14 natten til onsdag fra en intern subnet-IP (10.144.20.1). "
+                "I sessionsloggen ses en routing-kommando, der peger mod Teltonika 4G-routerens IP!"
+            )
+            return
+        if "ventil" in norm or "festo" in norm:
+            self.record_clue("spor_dcp_storm")
+            self.emit(
+                "Festo ventil-ø og Siemens ET 200SP I/O moduler: Ventilerne cykler kaotisk. "
+                "En statusdiode blinker 'BF' (Bus Fault), fordi PROFINET DCP pakker overskriver enhedens stationsnavn."
+            )
+            return
 
         self.emit(f"Du undersøger {target}. Alt virker som forventet for denne komponent.")
 
@@ -1126,14 +1155,174 @@ class GameEngine:
             self.metrics.adjust_compliance(-10, "Frist for 24-timers Early Warning overskredet")
         self.emit(f"\n{msg}")
 
+    def present_case_investigation(self) -> None:
+        if self.chapter < 5:
+            self.emit(
+                f"\n⚠️ [EFTERFORSKNING UNDERVEJS - KAPITEL {self.chapter}/5]:\n"
+                "Du kan ikke afslutte og fremlægge efterforskningen endnu. "
+                "Du skal først afværge de akutte angreb og sikre alle anlægszoner!"
+            )
+            return
+
+        prime_id = self.investigation.prime_suspect_id
+        if not prime_id:
+            self.emit(
+                "\n⚠️ [SAGSTAVLE MANGLER HOVEDMISTÆNKT]:\n"
+                "Kirsten og Hans ser på dig: 'Hvem mener du står bag denne sabotage mod drikkevandsforsyningen?'\n"
+                "Du skal fastsætte din hovedmistænkte før Tilsynet kan vurdere sagen.\n"
+                "Brug 'anklag <id>' med en af kandidaterne fra sagstavlen:\n"
+                "  • 'anklag lars_ex_tekniker'  (Lars Kofoed - Fratrådt automationstekniker)\n"
+                "  • 'anklag kim_operatoer'     (Kim Dahl - Intern procesoperatør på natholdet)\n"
+                "  • 'anklag morten_pumper'     (Morten Vestergaard - Ekstern pumpe-ingeniør)\n"
+                "  • 'anklag apt_shadowh2o'     (ShadowH2O - Cyberkriminelt APT-syndikat)\n"
+                "  • 'anklag systemisk_fejl'    (Systemisk fejl & akkumuleret teknisk gæld)\n"
+                "Skriv derefter 'fremlæg sagstavle' igen for at konfrontere Tilsynet!"
+            )
+            return
+
+        suspect = self.investigation.get_suspect(prime_id)
+        discovered_count = len(self.investigation.get_discovered_clues())
+        self.flags.add("case-presented")
+
+        self.emit("\n" + "=" * 80)
+        self.emit("   🕵️  DEN STORE KONFRONTATION – FREMLÆGGELSE FORAN TILSYNET & DRIFTEN    ")
+        self.emit("=" * 80)
+        self.emit(f"Du træder frem foran Kirsten fra Cybersikkerhedstilsynet og driftstekniker Hans McDonald.")
+        self.emit(f"På sagstavlen er der dokumenteret {discovered_count} ud af 11 mulige tekniske og fysiske spor.")
+        self.emit(f"\nDu peger på din hovedmistænkte: {suspect.name if suspect else prime_id}!")
+        if suspect:
+            self.emit(f"Rolle: {suspect.role}")
+            self.emit(f"Arbejdshypotese: \"{suspect.theory}\"")
+
+        if prime_id == "lars_ex_tekniker":
+            self.flags.add("case-solved-lars")
+            self.metrics.adjust_compliance(15, "Korrekt identifikation af gerningsmand")
+            self.metrics.adjust_tillid(10, "Hans lettet over sagens opklaring")
+            self.emit("\nHans spærrer øjnene op og tager sig til hovedet:")
+            self.emit("\"Lars... Vor herre bevares. Det giver jo fuldkommen mening!")
+            self.emit("Lars vidste præcis hvordan datablok DB1 var bygget op i S7-1500 PLC'en, for det var ham selv, der lavede den i TIA Portal!")
+            self.emit("Og det efterladte USB-stik mærket 'LARS - TIA V16 BACKUP'... Han efterlod sine ubeskyttede projekter uden kodeord!")
+            self.emit("Og den Raspberry Pi i kabelbakken... Lars snakkede altid om, at 'Siemens switches er spild af penge, en Pi kan det samme'.")
+            self.emit("Han har haft en gammel nøglebrik og sneg sig ind i produktionshallen efter fyringen!\"")
+
+            self.emit("\nKirsten nikker med et sjældent, anerkendende smil og retter på sine briller:")
+            self.emit("\"Vores telemetri-analyse af Teltonika 4G-routerens VPN-tunnel bekræfter din konklusion.")
+            self.emit("IP-adressen i tunnelens endepunkt peger direkte på en lejet cloud-VPS registreret til 'Lars Kofoed Automationsservice'.")
+            self.emit("Lars udnyttede operatøren Kims naivitet – han overtalte Kim til at sætte 4G-routeren op under påskud af,")
+            self.emit("at det var en uskyldig 'Wi-Fi forstærker', så Kim kunne streame fodbold om natten.")
+            self.emit("Lars forsøgte bevidst at fremprovokere et kavitetskollaps og et PLC-nedbrud lige op til vores ankomst for at hævne sin fyring.")
+            self.emit("Sagen er hermed overdraget til Rigspolitiets Nationale Cyber Crime Center (NC3) under Straffelovens § 193.")
+            self.emit("Fremragende opklaringsarbejde, konsulent!\"")
+
+        elif prime_id == "kim_operatoer":
+            self.emit("\nHans ryster på hovedet:")
+            self.emit("\"Kim?! Jamen Kim er jo bare en doven operatør på natholdet! Ja, han satte 4G-modemet i stikket bag racket,")
+            self.emit("fordi han ville se Champions League fra sofaen. Men Kim kan knap nok stave til Python!")
+            self.emit("Han var slet ikke i stand til at konstruere Scapy Modbus exploits eller DCP spoofing.\"")
+            self.emit("\nKirsten tilføjer: 'Korrekt. Kim handlede i grov strid med anlæggets fysiske sikkerhedspolitik (NIS2 Art. 21.2.i),")
+            self.emit("men han var blot en uvidende døråbner for den virkelige bagmand (den fyrede tekniker Lars Kofoed).")
+            self.emit("Kim modtager en disciplinær advarsel, men han er ikke hovedmanden bag angrebet.'")
+
+        elif prime_id == "morten_pumper":
+            self.emit("\nHans udbryder forfærdet:")
+            self.emit("\"Morten?! Nej hør nu, Mortens firma Hydropump har serviceret vores pumper i 15 år!")
+            self.emit("Netværksloggen viste ganske rigtigt Modbus-pakker fra 192.168.1.50, men det var spoofet fra den rogue Raspberry Pi")
+            self.emit("for at kaste mistanken over på en uskyldig ekstern leverandør!\"")
+            self.emit("\nKirsten: 'Vi har kontrolleret Mortens alibi. Han sad i et kundemøde i Kolding på gerningstidspunktet.")
+            self.emit("Du hoppede i gerningsmandens vildspor, konsulent.'")
+
+        elif prime_id == "apt_shadowh2o":
+            self.emit("\nKirsten trækker på smilebåndet med en tør latter:")
+            self.emit("\"ShadowH2O? Et geopolitisk cybersyndikat? Du har set for mange actionfilm, konsulent.")
+            self.emit("Dette angreb indeholdt ingen 'Zero-days' eller avancerede statsstøttede cybervåben.")
+            self.emit("Det krævede blot standardkodeord, ubeskyttede PUT/GET indstillinger og en billig Raspberry Pi tapet med gaffa.")
+            self.emit("Dette var en forsmået tidligere medarbejder – ikke en fremmed magt.\"")
+
+        elif prime_id == "systemisk_fejl":
+            self.emit("\nHans sukker:")
+            self.emit("\"Vores tekniske gæld var enorm, ja. Men gaffatape i en kabelbakke og en hemmelig 4G-router i et server-rack")
+            self.emit("opstår ikke af sig selv ved et uheld! Dette var overlagt, målrettet sabotage.\"")
+            self.emit("\nKirsten: 'Bekvem forklaring, men de fysiske beviser dokumenterer en overlagt forbrydelse.'")
+
+        self.emit("\n" + "-" * 80)
+        self.emit("📋 Sagstavlen er nu fremlagt! Kirsten er klar til at udstede Tilsynets officielle revision.")
+        self.emit("Tast '2' eller skriv 'revisor' for at modtage det endelige NIS2 audit-dekret!")
+        self.emit("-" * 80)
+
     def export_audit_report(self) -> None:
         flaws = self.collect_flaws()
-        passed, score, remarks, report_text = self.incident.evaluate_compliance(
+        passed, score, remarks, base_report = self.incident.evaluate_compliance(
             self.player.name, self.flags, flaws, self.forensics.pi_handling_state
         )
+        prime_id = self.investigation.prime_suspect_id
+        prime_name = self.investigation.get_suspect(prime_id).name if prime_id and self.investigation.get_suspect(prime_id) else "Ingen anklaget"
+
+        # Build extensive Markdown audit report
+        discovered_clues = self.investigation.get_discovered_clues()
+        evidence_entries = self.forensics.evidence_log
+
+        lines = [
+            f"# NIS2 & IEC 62443 REVISIONSRAPPORT",
+            f"**Virksomhed:** Nordic H2O Utility A/S (Drikkevandsforsyning - Væsentlig Enhed)",
+            f"**Lead Cybersikkerhedskonsulent:** {self.player.name} ({getattr(self.player, 'education', 'Automation & IT-Sikkerhed')})",
+            f"**Revisionsorgan:** Miljø- og Cybersikkerhedstilsynet (Auditor Kirsten)",
+            f"**Tilsynsdato:** Dag 5 (Afsluttende hændelsesrevision)",
+            f"**Overordnet Resultat:** {'BESTÅET (Fuld 3-årig driftstilladelse)' if passed else 'DUMPET (Driftstilladelse inddraget)'}",
+            f"**Samlet Compliance Score:** {score} / 100 point (Krav: min. 80 point)",
+            "",
+            "## 1. Hovedmetrikker for Anlæg og Drift",
+            f"- **🔧 Drift:** [{self.investigation._render_bar(self.metrics.drift)}] {self.metrics.drift}% (Uptime & hydraulisk stabilitet)",
+            f"- **🛡️ Sikkerhed:** [{self.investigation._render_bar(self.metrics.sikkerhed)}] {self.metrics.sikkerhed}% (IEC 62443 zoner & conduits)",
+            f"- **📜 Compliance:** [{self.investigation._render_bar(self.metrics.compliance)}] {self.metrics.compliance}% (NIS2 Artikel 21 & 23)",
+            f"- **🤝 Tillid:** [{self.investigation._render_bar(self.metrics.tillid)}] {self.metrics.tillid}% (Samarbejde med driftspersonale)",
+            "",
+            "## 2. Efterforskning & Sagstavle (Trusselsvurdering)",
+            f"- **Udpeget gerningsmand:** {prime_name}",
+            f"- **Gerningsmandskonklusion:** {'KORREKT (Lars Kofoed - Sag overdraget til Rigspolitiet NC3)' if prime_id == 'lars_ex_tekniker' else 'Uafklaret eller vildledt'}",
+            f"- **Dokumenterede spor:** {len(discovered_clues)} af 11 spor opdaget",
+            "",
+            "### Opdagede tekniske og fysiske spor:",
+        ]
+
+        for c in discovered_clues:
+            lines.append(f"- **[{c.id}]** *{c.title}* ({c.category} - {c.discovery_room}): {c.analysis}")
+
+        lines.extend([
+            "",
+            "## 3. Forensisk Evidens & Chain of Custody (NIS2 Artikel 21.2.b)",
+            f"- **Rogue Pi Tilstand:** {self.forensics.pi_handling_state.upper()}",
+        ])
+
+        for ev in evidence_entries:
+            lines.append(f"- **Bevis #{ev.item_id}:** {ev.description} | SHA-256: `{ev.sha256}` | Plomberingsnr: `{ev.seal_number}`")
+
+        lines.extend([
+            "",
+            "## 4. Gennemgang af NIS2 Artikel 21 Risikostyringsforanstaltninger",
+        ])
+        for r in remarks:
+            icon = "✅" if not any(w in r for w in {"Mangler", "Manglende", "KRITISK", "FEJL", "fejl", "står", "blindet"}) else "❌"
+            lines.append(f"- {icon} {r}")
+
+        lines.extend([
+            "",
+            "## 5. UCL Faglige Læringsmål og Studiekonklusion",
+            "Denne rapport dokumenterer kompetencer inden for:",
+            "- **Purdue Modellen & IEC 62443:** Etablering af zoner og conduits mellem Level 1 (Feltbus) og Level 3.5 (IDMZ).",
+            "- **Modbus TCP Sikkerhed:** L7 Deep Packet Inspection (DPI) på SCALANCE S615 (Tillad FC 03 læsning, afvis FC 06/16 skrivning).",
+            "- **PROFINET Determinisme & MRP:** Eliminering af rogue hardware og redundans med SCALANCE XB-200.",
+            "- **Siemens S7-1500 Sikkerhedshærdning:** Frakobling af ubeskyttet PUT/GET og etablering af Protection Level 3.",
+            "- **OPC UA PKI & Kryptografi:** X.509 certifikatvalidering, Basic256Sha256 SignAndEncrypt og eliminering af anonym adgang.",
+            "- **NIS2 Compliance:** 24-timers Early Warning (Art. 23) og retsmedicinsk beviskæde i Faraday-pose (Art. 21.2.b).",
+            "",
+            "---",
+            "*Genereret automatisk af The Curse of Insecure Packets - UCL Erhvervsakademi og Professionshøjskole.*"
+        ])
+
+        full_report_text = "\n".join(lines)
         try:
             with open("NIS2_Audit_Rapport_NordicH2O.md", "w", encoding="utf-8") as f:
-                f.write(report_text)
+                f.write(full_report_text)
             self.emit("\n📄 [NIS2 REVISIONSRAPPORT EKSPORTERET]:")
             self.emit("Rapporten er gemt i projektmappen som 'NIS2_Audit_Rapport_NordicH2O.md'.")
             self.emit("De studerende kan benytte denne rapport som bilag til deres UCL-studieportfolio!")
@@ -1160,11 +1349,27 @@ class GameEngine:
         passed, score, remarks, _report = self.incident.evaluate_compliance(
             self.player.name, self.flags, flaws, self.forensics.pi_handling_state
         )
-        verdict = self.kirsten.format_verdict(passed, score, remarks)
+        prime_id = self.investigation.prime_suspect_id
+
+        # Kirsten's four-dimensional decree
+        verdict = self.kirsten.format_final_verdict(
+            passed, score, self.metrics, remarks, prime_id
+        )
         self.emit(verdict)
+
+        # Hans debriefing
+        hans_reaction = self.hans.get_final_verdict_reaction(self.metrics, prime_id)
+        self.emit(hans_reaction)
+
+        # Export full official report
+        self.export_audit_report()
+
         if passed:
-            self.export_audit_report()
+            self.emit("\n🎉 [SPILLET ER GENNEMFØRT!] Tillykke! Du har reddet Nordic H2O Utility og bestået NIS2-auditten!")
+            self.emit("En fuld revisionsrapport 'NIS2_Audit_Rapport_NordicH2O.md' er genereret til din UCL-studieportfolio.")
             self.running = False
+        else:
+            self.emit("\n⚠️ [AUDIT IKKE BESTÅET] Ret fejlene og genforsøg auditten med 'revisor'.")
 
     def help(self) -> None:
         self.emit("\n=== TILGÆNGELIGE KOMMANDOER ===")
