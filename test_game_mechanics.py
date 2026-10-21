@@ -637,6 +637,62 @@ def test_investigative_chapter_flow_and_finale():
     print("  -> Passed.")
 
 
+def test_save_and_load_persistence():
+    print("Test 14: Save & Load persistence across chapters & metrics...")
+    logs = []
+    engine1 = GameEngine(output=logs.append)
+    engine1.start("SikkerhedsTest", "Automationsteknolog")
+    engine1.game_mode = "exam"
+    engine1.chapter = 3
+    engine1.room = "ventil-oen"
+    engine1.flags.add("chapter-1-done")
+    engine1.flags.add("chapter-2-done")
+    engine1.flags.add("pi-discovered")
+    engine1.metrics.adjust_drift(-15, "Test drift drop")
+    engine1.metrics.adjust_sikkerhed(25, "Test firewall rule")
+    engine1.investigation.prime_suspect_id = "lars_ex_tekniker"
+    engine1.investigation.discover_clue("spor_modbus_flood")
+
+    test_save_path = "saves/test_persistence_check.json"
+    if os.path.exists(test_save_path):
+        os.remove(test_save_path)
+
+    ok, msg = engine1.save_state(test_save_path)
+    assert ok is True
+    assert os.path.exists(test_save_path)
+    assert "gemt" in msg.lower()
+
+    # Load into clean engine2
+    engine2 = GameEngine()
+    ok_load, load_msg = engine2.load_state(test_save_path)
+    assert ok_load is True
+    assert "indlæst" in load_msg.lower()
+
+    assert engine2.player.name == "SikkerhedsTest"
+    assert engine2.player.education == "Automationsteknolog"
+    assert engine2.game_mode == "exam"
+    assert engine2.chapter == 3
+    assert engine2.room == "ventil-oen"
+    assert "chapter-1-done" in engine2.flags
+    assert "chapter-2-done" in engine2.flags
+    assert "pi-discovered" in engine2.flags
+    assert engine2.metrics.drift == engine1.metrics.drift
+    assert engine2.metrics.sikkerhed == engine1.metrics.sikkerhed
+    assert engine2.investigation.prime_suspect_id == "lars_ex_tekniker"
+    assert "spor_modbus_flood" in engine2.investigation.clues
+    assert engine2.investigation.clues["spor_modbus_flood"].discovered is True
+
+    # Test list_save_files
+    save_list = engine2.list_save_files()
+    assert any(s["filename"] == "test_persistence_check.json" for s in save_list)
+
+    # Clean up test save file
+    if os.path.exists(test_save_path):
+        os.remove(test_save_path)
+
+    print("  -> Passed.")
+
+
 if __name__ == "__main__":
     test_purdue_and_iec()
     test_sniffer_and_wireshark()
@@ -651,4 +707,5 @@ if __name__ == "__main__":
     test_tshark_and_scada_blindness_rule()
     test_narrative_metrics_and_investigation_board()
     test_investigative_chapter_flow_and_finale()
+    test_save_and_load_persistence()
     print("\nALL MECHANICS TESTS PASSED SUCCESSFULLY! [OK]")

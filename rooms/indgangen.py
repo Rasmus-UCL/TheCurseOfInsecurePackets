@@ -50,6 +50,7 @@ class IndgangenRoom(BaseRoom):
                 choices.append(("6", "Tal med driftstekniker Hans McDonald om anlæggets drift", "tal med hans", "normal"))
                 choices.append(("7", "Spørg auditor Kirsten om compliance-krav og sanktioner", "spørg kirsten om artikel 21", "normal"))
                 choices.append(("8", "Gå til Kontrolrummet (IDMZ)", "gå til kontrolrummet", "normal"))
+                choices.append(("9", "Afslut til Hovedmenuen", "hovedmenu", "normal"))
             else:
                 choices.append(("1", "🕵️ Trin 1 (Konfrontation): Fremlæg sagstavle & udpeg gerningsmand ('fremlæg sagstavle')", "fremlæg sagstavle", "success"))
                 choices.append(("2", "📋 Trin 2 (Audit): Gennemfør officiel NIS2 revision med Revisor Kirsten ('revisor')", "revisor", "success"))
@@ -59,6 +60,7 @@ class IndgangenRoom(BaseRoom):
                 choices.append(("6", "☕ Trin 6 (Debrief): Tal med Hans McDonald om forløbet ('tal med hans')", "tal med hans", "normal"))
                 choices.append(("7", "⚖️ Trin 7 (Tilsyn): Spørg Kirsten om sanktioner og NIS2 Artikel 21/23", "spørg kirsten om artikel 21", "normal"))
                 choices.append(("8", "🖥️ Navigation: Gå til Kontrolrummet (IDMZ)", "gå til kontrolrummet", "normal"))
+                choices.append(("9", "🏠 Afslutning: Vend tilbage til Hovedmenuen ('hovedmenu')", "hovedmenu", "normal"))
             return choices
 
         if mode == "exam":

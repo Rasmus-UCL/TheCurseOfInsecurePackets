@@ -111,6 +111,12 @@ class TerminalWidget(tk.Frame):
         clean_loc = location.lower().replace("-", "_")
         self.prompt_label.configure(text=f"OT-Consol:\\{clean_loc}> ")
 
+    def clear(self) -> None:
+        """Clear the CRT terminal output screen."""
+        self.text.configure(state="normal")
+        self.text.delete("1.0", "end")
+        self.text.configure(state="disabled")
+
     def write_line(self, message: str, tag: str | None = None) -> None:
         self.text.configure(state="normal")
         if not tag:

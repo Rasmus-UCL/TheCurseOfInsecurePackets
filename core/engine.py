@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import random
 import re
 import time
@@ -223,19 +225,313 @@ class GameEngine:
         self.emit("\n⏰ [TIDEN ER UDLØBET! Tilsynets 5-dages frist er overskredet]")
         self.emit("Miljø- og Cybersikkerhedstilsynet ankommer uvarslet, men du nåede ikke at sikre anlægget i tide.")
         self.emit("Driftstilladelsen trækkes tilbage. Missionen er tabt.")
+        self.emit("\n💡 Tast 'hovedmenu' eller klik '🏠 Menu' for at vende tilbage til Hovedmenuen.")
         self.running = False
 
     def expire_pump_timer(self) -> None:
         self.emit("\n💥 [KATASTROFE] PUMPE 2 HAR OVERSKREDET SPRÆNGNINGSGRÆNSEN (150 BAR)!")
         self.emit("Rørene sprang, pumpehuset er oversvømmet, og nødstop er udløst på hele fabrikken.")
         self.emit("Du nåede ikke at afværge hændelsen i tide. Missionen er tabt.")
+        self.emit("\n💡 Tast 'hovedmenu' eller klik '🏠 Menu' for at vende tilbage til Hovedmenuen.")
         self.running = False
 
     def expire_cavitation_timer(self) -> None:
         self.emit("\n💥 [KATASTROFE] PUMPE 2'S PUMPEHJUL ER BLEVET SMADRET AF KAVITATION!")
         self.emit("Da modtrykket forsvandt under det ukontrollerede switch-udfald, opstod der voldsomme dampboble-implosioner.")
         self.emit("Vibrationssensoren udløste total nødnedlukning af vandværket. Tilsynet inddrager driftstilladelsen. Missionen er tabt.")
+        self.emit("\n💡 Tast 'hovedmenu' eller klik '🏠 Menu' for at vende tilbage til Hovedmenuen.")
         self.running = False
+
+    # -------------------------------------------------------------------------
+    # SAVE & LOAD SYSTEM (JSON PERSISTENCE)
+    # -------------------------------------------------------------------------
+    def save_state(self, filepath: str | None = None) -> tuple[bool, str]:
+        """Save the entire game engine state to a JSON file."""
+        if not filepath:
+            os.makedirs("saves", exist_ok=True)
+            p_name = re.sub(r"[^\w\-]", "_", self.player.name.strip()) or "konsulent"
+            filepath = os.path.join("saves", f"save_{p_name}.json")
+        else:
+            d = os.path.dirname(filepath)
+            if d:
+                os.makedirs(d, exist_ok=True)
+
+        pump_remaining = max(0.0, self.pump_deadline_seconds - (time.monotonic() - self.pump_deadline_started_at)) if self.pump_deadline_active else 0.0
+        cav_remaining = max(0.0, self.cavitation_deadline_seconds - (time.monotonic() - self.cavitation_deadline_started_at)) if self.cavitation_deadline_active else 0.0
+
+        save_dict: dict[str, Any] = {
+            "version": "2.0",
+            "save_time": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "player": {
+                "name": self.player.name,
+                "education": getattr(self.player, "education", ""),
+                "inventory": list(self.player.inventory),
+            },
+            "game_mode": self.game_mode,
+            "chapter": self.chapter,
+            "room": self.room,
+            "flags": list(self.flags),
+            "running": self.running,
+            "help_calls": self.help_calls,
+            "elapsed_seconds": self.elapsed_seconds,
+            "deadlines": {
+                "pump_deadline_active": self.pump_deadline_active,
+                "pump_remaining": pump_remaining,
+                "cavitation_deadline_active": self.cavitation_deadline_active,
+                "cav_remaining": cav_remaining,
+            },
+            "workbench": {
+                "active_workbench": self.active_workbench,
+                "vfd_mounted": self.vfd_mounted,
+                "vfd_cabled": self.vfd_cabled,
+                "wrong_cabling": self.wrong_cabling,
+            },
+            "consequences": {
+                "breaker_tripped": self.breaker_tripped,
+                "scada_blind": self.scada_blind,
+                "plc_defect_stop": self.plc_defect_stop,
+                "scada_log_interrupted": self.scada_log_interrupted,
+            },
+            "metrics": {
+                "drift": self.metrics.drift,
+                "sikkerhed": self.metrics.sikkerhed,
+                "compliance": self.metrics.compliance,
+                "tillid": self.metrics.tillid,
+                "history": self.metrics.history,
+            },
+            "investigation": {
+                "prime_suspect_id": self.investigation.prime_suspect_id,
+                "clues": {
+                    c_id: {"discovered": c.discovered, "discovered_time": c.discovered_time}
+                    for c_id, c in self.investigation.clues.items()
+                },
+                "suspects": {
+                    s_id: {"suspicion_score": s.suspicion_score, "status": s.status, "notes": s.notes}
+                    for s_id, s in self.investigation.suspects.items()
+                },
+            },
+            "forensics": {
+                "pi_handling_state": self.forensics.pi_handling_state,
+                "forensic_violations": self.forensics.forensic_violations,
+                "evidence_log": [
+                    {
+                        "item_id": ev.item_id,
+                        "name": ev.name,
+                        "description": ev.description,
+                        "location": ev.location,
+                        "purdue_level": ev.purdue_level,
+                        "mac_address": ev.mac_address,
+                        "ip_address": ev.ip_address,
+                        "sha256": ev.sha256,
+                        "timestamp": ev.timestamp,
+                        "secured_properly": ev.secured_properly,
+                        "handling_notes": ev.handling_notes,
+                        "seal_number": ev.seal_number,
+                    }
+                    for ev in self.forensics.evidence_log
+                ],
+            },
+            "incident": {
+                "early_warning_sent": self.incident.early_warning_sent,
+                "reports": [
+                    {
+                        "timestamp": r.timestamp,
+                        "submitted_day": r.submitted_day,
+                        "submitted_hour": r.submitted_hour,
+                        "incident_type": r.incident_type,
+                        "affected_zone": r.affected_zone,
+                        "severity": r.severity,
+                        "initial_actions": r.initial_actions,
+                        "is_early_warning_submitted": r.is_early_warning_submitted,
+                        "early_warning_deadline_hours": r.early_warning_deadline_hours,
+                    }
+                    for r in self.incident.reports
+                ],
+            },
+            "devices": {
+                "rogue_pi_disconnected": self.rogue_pi.disconnected,
+                "rogue_pi_revealed": getattr(self.rogue_pi, "revealed", False),
+                "plc_f_passivated": getattr(self.plc, "f_passivated", False),
+                "plc_bootloader_locked": getattr(self.plc, "bootloader_locked", False),
+            },
+        }
+
+        try:
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(save_dict, f, indent=2, ensure_ascii=False)
+            quicksave_path = os.path.join("saves", "quicksave.json")
+            if os.path.abspath(filepath) != os.path.abspath(quicksave_path):
+                with open(quicksave_path, "w", encoding="utf-8") as f:
+                    json.dump(save_dict, f, indent=2, ensure_ascii=False)
+            return True, f"💾 [SPIL GEMT]: Spiltilstanden er gemt i '{filepath}'."
+        except Exception as e:
+            return False, f"Fejl under lagring af spil: {e}"
+
+    def load_state(self, filepath: str | None = None) -> tuple[bool, str]:
+        """Load and restore the game engine state from a JSON file."""
+        if not filepath:
+            filepath = os.path.join("saves", "quicksave.json")
+            if not os.path.exists(filepath):
+                saves = self.list_save_files()
+                if saves:
+                    filepath = saves[0]["filepath"]
+                else:
+                    return False, "Ingen gemte spil fundet i 'saves/' mappen."
+
+        if not os.path.exists(filepath):
+            return False, f"Gemt spil '{filepath}' blev ikke fundet."
+
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            p_data = data.get("player", {})
+            self.player.name = p_data.get("name", "Konsulent")
+            self.player.education = p_data.get("education", "Automation & IT-Sikkerhed")
+            if "inventory" in p_data:
+                self.player.inventory = set(p_data["inventory"])
+
+            self.game_mode = data.get("game_mode", "teach")
+            self.chapter = data.get("chapter", 1)
+            self.room = data.get("room", "indgangen")
+            self.flags = set(data.get("flags", []))
+            self.running = data.get("running", True)
+            self.help_calls = data.get("help_calls", 0)
+
+            elapsed = data.get("elapsed_seconds", 0.0)
+            self.timer_started_at = time.monotonic() - elapsed
+
+            deadlines = data.get("deadlines", {})
+            self.pump_deadline_active = deadlines.get("pump_deadline_active", False)
+            if self.pump_deadline_active:
+                p_rem = deadlines.get("pump_remaining", self.pump_deadline_seconds)
+                self.pump_deadline_started_at = time.monotonic() - (self.pump_deadline_seconds - p_rem)
+            else:
+                self.pump_deadline_started_at = 0.0
+
+            self.cavitation_deadline_active = deadlines.get("cavitation_deadline_active", False)
+            if self.cavitation_deadline_active:
+                c_rem = deadlines.get("cav_remaining", self.cavitation_deadline_seconds)
+                self.cavitation_deadline_started_at = time.monotonic() - (self.cavitation_deadline_seconds - c_rem)
+            else:
+                self.cavitation_deadline_started_at = 0.0
+
+            wb = data.get("workbench", {})
+            self.active_workbench = wb.get("active_workbench")
+            self.vfd_mounted = wb.get("vfd_mounted", False)
+            self.vfd_cabled = wb.get("vfd_cabled", False)
+            self.wrong_cabling = wb.get("wrong_cabling", False)
+
+            cons = data.get("consequences", {})
+            self.breaker_tripped = cons.get("breaker_tripped", False)
+            self.scada_blind = cons.get("scada_blind", False)
+            self.plc_defect_stop = cons.get("plc_defect_stop", False)
+            self.scada_log_interrupted = cons.get("scada_log_interrupted", False)
+
+            m_data = data.get("metrics", {})
+            self.metrics.drift = m_data.get("drift", 80)
+            self.metrics.sikkerhed = m_data.get("sikkerhed", 25)
+            self.metrics.compliance = m_data.get("compliance", 40)
+            self.metrics.tillid = m_data.get("tillid", 50)
+            self.metrics.history = m_data.get("history", [])
+
+            inv_data = data.get("investigation", {})
+            self.investigation.prime_suspect_id = inv_data.get("prime_suspect_id")
+            for c_id, c_val in inv_data.get("clues", {}).items():
+                if c_id in self.investigation.clues:
+                    self.investigation.clues[c_id].discovered = c_val.get("discovered", False)
+                    self.investigation.clues[c_id].discovered_time = c_val.get("discovered_time", "")
+            for s_id, s_val in inv_data.get("suspects", {}).items():
+                if s_id in self.investigation.suspects:
+                    self.investigation.suspects[s_id].suspicion_score = s_val.get("suspicion_score", 0)
+                    self.investigation.suspects[s_id].status = s_val.get("status", "Aktiv efterforskning")
+                    self.investigation.suspects[s_id].notes = s_val.get("notes", [])
+
+            f_data = data.get("forensics", {})
+            self.forensics.pi_handling_state = f_data.get("pi_handling_state", "unhandled")
+            self.forensics.forensic_violations = f_data.get("forensic_violations", [])
+            self.forensics.evidence_log = []
+            for ev in f_data.get("evidence_log", []):
+                from core.forensics import EvidenceItem
+                item = EvidenceItem(
+                    item_id=ev.get("item_id", ""),
+                    name=ev.get("name", ""),
+                    description=ev.get("description", ""),
+                    location=ev.get("location", ""),
+                    purdue_level=ev.get("purdue_level", ""),
+                    mac_address=ev.get("mac_address", ""),
+                    ip_address=ev.get("ip_address", ""),
+                    sha256=ev.get("sha256", ""),
+                    timestamp=ev.get("timestamp", time.time()),
+                    secured_properly=ev.get("secured_properly", False),
+                    handling_notes=ev.get("handling_notes", ""),
+                    seal_number=ev.get("seal_number", ""),
+                )
+                self.forensics.evidence_log.append(item)
+
+            inc_data = data.get("incident", {})
+            self.incident.early_warning_sent = inc_data.get("early_warning_sent", False)
+            self.incident.reports = []
+            for r_item in inc_data.get("reports", []):
+                from core.incident import IncidentReport
+                rep = IncidentReport(
+                    timestamp=r_item.get("timestamp", time.time()),
+                    submitted_day=r_item.get("submitted_day", 1),
+                    submitted_hour=r_item.get("submitted_hour", 1),
+                    incident_type=r_item.get("incident_type", ""),
+                    affected_zone=r_item.get("affected_zone", ""),
+                    severity=r_item.get("severity", "HØJ"),
+                    initial_actions=r_item.get("initial_actions", ""),
+                    is_early_warning_submitted=r_item.get("is_early_warning_submitted", False),
+                    early_warning_deadline_hours=r_item.get("early_warning_deadline_hours", 24),
+                )
+                self.incident.reports.append(rep)
+
+            dev = data.get("devices", {})
+            self.rogue_pi.disconnected = dev.get("rogue_pi_disconnected", False)
+            if dev.get("rogue_pi_revealed", False):
+                self.rogue_pi.reveal()
+            self.plc.f_passivated = dev.get("plc_f_passivated", False)
+            self.plc.bootloader_locked = dev.get("plc_bootloader_locked", False)
+
+            self._cached_choices = None
+            self._cached_state_key = None
+
+            return True, f"📂 [SPIL INDLÆST]: Spillet for '{self.player.name}' (Kapitel {self.chapter}/5, Zone: {self.room}) er genoptaget!"
+
+        except Exception as e:
+            return False, f"Fejl under indlæsning af gemt spil '{filepath}': {e}"
+
+    @staticmethod
+    def list_save_files() -> list[dict[str, Any]]:
+        """List all available save games in the saves/ directory with summary metadata."""
+        saves_dir = "saves"
+        if not os.path.exists(saves_dir):
+            return []
+        results = []
+        for fname in os.listdir(saves_dir):
+            if not fname.endswith(".json"):
+                continue
+            fpath = os.path.join(saves_dir, fname)
+            try:
+                with open(fpath, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                results.append({
+                    "filename": fname,
+                    "filepath": fpath,
+                    "save_time": data.get("save_time", "Ukendt tid"),
+                    "player_name": data.get("player", {}).get("name", "Konsulent"),
+                    "player_education": data.get("player", {}).get("education", ""),
+                    "chapter": data.get("chapter", 1),
+                    "room": data.get("room", "indgangen"),
+                    "game_mode": data.get("game_mode", "teach"),
+                    "metrics": data.get("metrics", {}),
+                    "mtime": os.path.getmtime(fpath),
+                })
+            except Exception:
+                continue
+        results.sort(key=lambda x: x["mtime"], reverse=True)
+        return results
 
     # -------------------------------------------------------------------------
     # ROOMS, CHOICES & NAVIGATION
@@ -442,6 +738,37 @@ class GameEngine:
             self.submit_early_warning()
         elif normalized in {"eksporter rapport", "eksport rapport", "gem rapport"}:
             self.export_audit_report()
+        elif normalized in {"gem", "gem spil", "save", "savegame"}:
+            ok, msg = self.save_state()
+            self.emit(msg)
+        elif normalized.startswith("gem "):
+            save_name = normalized.removeprefix("gem ").strip()
+            filepath = os.path.join("saves", f"{save_name}.json" if not save_name.endswith(".json") else save_name)
+            ok, msg = self.save_state(filepath)
+            self.emit(msg)
+        elif normalized in {"hent", "hent spil", "indlæs", "indlaes", "load"}:
+            ok, msg = self.load_state()
+            self.emit(msg)
+            if ok:
+                self.describe_room()
+        elif normalized.startswith("hent ") or normalized.startswith("load ") or normalized.startswith("indlæs ") or normalized.startswith("indlaes "):
+            save_name = normalized.replace("hent ", "").replace("load ", "").replace("indlæs ", "").replace("indlaes ", "").strip()
+            filepath = os.path.join("saves", f"{save_name}.json" if not save_name.endswith(".json") else save_name)
+            ok, msg = self.load_state(filepath)
+            self.emit(msg)
+            if ok:
+                self.describe_room()
+        elif normalized in {"gemte spil", "saves", "vis saves", "list saves"}:
+            saves = self.list_save_files()
+            if not saves:
+                self.emit("Ingen gemte spil fundet i 'saves/' mappen.")
+            else:
+                self.emit("\n💾 [GEMTE SPIL I 'saves/']:")
+                for s in saves:
+                    self.emit(f"  • {s['filename']} ({s['save_time']}) - {s['player_name']} (Kapitel {s['chapter']}/5, {s['game_mode'].upper()})")
+        elif normalized in {"hovedmenu", "menu", "afslut til menu"}:
+            self.flags.add("return-to-menu")
+            self.emit("\n🏠 [HOVEDMENU]: Vender tilbage til startskærmen...")
         elif normalized in {"fremlæg sagstavle", "fremlaeg sagstavle", "fremlæg sag", "fremlaeg sag", "fremlæg", "fremlaeg", "afslut efterforskning", "fremlæg beviser", "fremlaeg beviser"}:
             self.present_case_investigation()
         elif normalized.startswith("tshark") or normalized in {"man tshark", "cheat tshark", "tshark cheatsheet", "tshark help"}:
@@ -1367,6 +1694,7 @@ class GameEngine:
         if passed:
             self.emit("\n🎉 [SPILLET ER GENNEMFØRT!] Tillykke! Du har reddet Nordic H2O Utility og bestået NIS2-auditten!")
             self.emit("En fuld revisionsrapport 'NIS2_Audit_Rapport_NordicH2O.md' er genereret til din UCL-studieportfolio.")
+            self.emit("\n💡 Tast 'hovedmenu' eller klik '🏠 Menu' for at vende tilbage til Hovedmenuen og starte et nyt spil.")
             self.running = False
         else:
             self.emit("\n⚠️ [AUDIT IKKE BESTÅET] Ret fejlene og genforsøg auditten med 'revisor'.")
@@ -1391,6 +1719,9 @@ class GameEngine:
         self.emit("  VIS EVIDENS               Gennemse digital Chain of Custody journal")
         self.emit("  STATUS                    Vis aktuel arbejdsdag, tidsfrist og kapitelmål")
         self.emit("  RYGSÆK                    Vis inventar og værktøjer")
+        self.emit("  GEM SPIL                  Gem din aktuelle spiltilstand til disk (saves/quicksave.json)")
+        self.emit("  HENT SPIL                 Hent og genoptag et gemt spil")
+        self.emit("  HOVEDMENU                 Gå tilbage til startskærmen / hovedmenuen")
 
     def tour(self) -> None:
         self.emit("\nHans McDonald tager dig med på en teknisk rundtur gennem anlæggets Purdue-zoner:")

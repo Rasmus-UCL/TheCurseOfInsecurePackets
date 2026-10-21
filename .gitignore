@@ -45,6 +45,10 @@ venv.bak/
 # Generated student audit reports
 NIS2_Audit_Rapport_*.md
 
+# Saved games
+saves/*.json
+!saves/.gitkeep
+
 # Operating System files
 .DS_Store
 Thumbs.db

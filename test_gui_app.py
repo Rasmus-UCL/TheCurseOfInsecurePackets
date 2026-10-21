@@ -1,5 +1,6 @@
 """Headless GUI test to verify GameApp launches and handles input cleanly."""
 
+import os
 import sys
 import tkinter as tk
 from gui.app import GameApp
@@ -143,6 +144,49 @@ def test_gui():
         app.toggle_sagstavle()
         app.update()
         assert app.map.view_mode == "room"
+
+        # Step 17: Test In-Game Quicksave
+        print("  -> Testing in-game quicksave...")
+        app.quick_save()
+        app.update()
+        expected_save = "saves/save_Christian.json"
+        assert os.path.exists(expected_save), f"Expected {expected_save} to exist"
+
+        # Step 18: Test Return to Main Menu
+        print("  -> Testing return to main menu...")
+        app.prompt_return_to_menu()
+        app.update()
+        assert app.menu_container.winfo_ismapped() or not app.gameplay_container.winfo_ismapped()
+
+        # Step 19: Test Main Menu tab switching
+        print("  -> Testing main menu tabs (load_game, lore, new_game)...")
+        app.switch_menu_tab("load_game")
+        app.update()
+        assert "load_game" in app.cards
+
+        app.switch_menu_tab("lore")
+        app.update()
+        assert "lore" in app.cards
+
+        app.switch_menu_tab("new_game")
+        app.update()
+        assert "new_game" in app.cards
+
+        # Step 20: Test Loading Saved Game
+        print("  -> Testing loading saved game...")
+        load_success = app.load_game_file(expected_save)
+        app.update()
+        assert load_success is True
+        assert app.engine.player.name == "Christian"
+        assert app.engine.chapter == 2
+
+        # Step 21: Test returning to menu via terminal command
+        print("  -> Testing terminal command 'hovedmenu'...")
+        app.command("hovedmenu")
+        app.update()
+        # Clean up test save file
+        if os.path.exists(expected_save):
+            os.remove(expected_save)
 
         app.destroy()
         print("GUI TEST PASSED SUCCESSFULLY! [OK]")
