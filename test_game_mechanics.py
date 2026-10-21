@@ -355,6 +355,88 @@ def test_tshark_and_scada_blindness_rule():
     print("  -> Passed.")
 
 
+def test_narrative_metrics_and_investigation_board():
+    print("Test 12: Narrative 4-metrics system, clues, suspects & case board (Etape 1)...")
+    logs = []
+    engine = GameEngine(output=logs.append)
+    engine.start("TestKonsulent", "Automation & IT")
+
+    # 1. Initial 4 metrics check
+    assert engine.metrics.drift == 80
+    assert engine.metrics.sikkerhed == 25
+    assert engine.metrics.compliance == 40
+    assert engine.metrics.tillid == 50
+
+    # 2. Case board initial state
+    assert len(engine.investigation.get_discovered_clues()) == 0
+    assert len(engine.investigation.suspects) == 5
+
+    # 3. Discovery through physical inspection
+    engine.handle_command("gå til pumpehuset")
+    logs.clear()
+    engine.handle_command("undersøg pumpe 2")
+    assert any("NYT SPOR TIL SAGSTAVLEN" in l for l in logs)
+    assert engine.investigation.get_clue("spor_manometer_rystelser").discovered is True
+
+    # 4. Discovery through tshark
+    logs.clear()
+    engine.handle_command("tshark -Y \"modbus\"")
+    assert engine.investigation.get_clue("spor_modbus_flood").discovered is True
+
+    # 5. Check suspicion scores updated
+    lars = engine.investigation.get_suspect("lars_ex_tekniker")
+    assert lars.suspicion_score > 35  # initial was 35, now boosted by clues
+
+    # 6. Test 'sagstavle' command output
+    logs.clear()
+    engine.handle_command("sagstavle")
+    board_output = "\n".join(logs)
+    assert "SAGSTAVLE" in board_output
+    assert "Drift:" in board_output
+    assert "Sikkerhed:" in board_output
+    assert "Compliance:" in board_output
+    assert "Tillid:" in board_output
+    assert "Højhastigheds Modbus" in board_output
+
+    # 7. Test 'spor' and 'analyser spor' commands
+    logs.clear()
+    engine.handle_command("spor")
+    assert "spor_modbus_flood" in "\n".join(logs)
+
+    logs.clear()
+    engine.handle_command("analyser spor spor_modbus_flood")
+    analysis = "\n".join(logs)
+    assert "OT-TEKNISK VURDERING" in analysis
+    assert "HYPOTESE-KNYTNING" in analysis
+
+    # 8. Test 'mistænkte' and 'anklag'
+    logs.clear()
+    engine.handle_command("mistænkte")
+    assert "Morten Vestergaard" in "\n".join(logs)
+    assert "Lars Kofoed" in "\n".join(logs)
+
+    logs.clear()
+    engine.handle_command("anklag lars_ex_tekniker")
+    assert "primære arbejdshypotese" in "\n".join(logs)
+    assert lars.status == "Hovedmistænkt"
+
+    # 9. Test metric adjustment when solving Chapter 1
+    old_drift = engine.metrics.drift
+    old_sikkerhed = engine.metrics.sikkerhed
+    engine.handle_command("firewall rule add --allow-fc 3 --drop-fc 6")
+    assert engine.metrics.drift > old_drift
+    assert engine.metrics.sikkerhed > old_sikkerhed
+
+    # 10. Test 'metrikker' command
+    logs.clear()
+    engine.handle_command("metrikker")
+    metr_output = "\n".join(logs)
+    assert "HOVEDMETRIKKER" in metr_output
+    assert "Drift" in metr_output
+
+    print("  -> Passed.")
+
+
 if __name__ == "__main__":
     test_purdue_and_iec()
     test_sniffer_and_wireshark()
@@ -367,4 +449,5 @@ if __name__ == "__main__":
     test_autocomplete_and_number_choices()
     test_teach_vs_exam_modes_and_shuffling()
     test_tshark_and_scada_blindness_rule()
+    test_narrative_metrics_and_investigation_board()
     print("\nALL MECHANICS TESTS PASSED SUCCESSFULLY! [OK]")

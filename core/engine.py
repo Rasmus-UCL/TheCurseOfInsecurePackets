@@ -10,11 +10,12 @@ from typing import Any
 
 from core.forensics import ForensicsManager
 from core.incident import IncidentManager
+from core.investigation import InvestigationManager
 from core.purdue import PURDUE_LEVELS
 from core.terminal_engine import AutocompleteHelper, WiresharkSniffer
 from devices import OpcUaDevice, PLCDevice, RoguePiDevice, SwitchDevice, VFDDevice
 from dialogues import HansDialogue, KirstenDialogue
-from models import OBJECTIVES, Player
+from models import OBJECTIVES, MetricValues, Player
 from rooms import ALL_ROOMS, BaseRoom
 
 
@@ -75,6 +76,10 @@ class GameEngine:
         self.hans = HansDialogue()
         self.kirsten = KirstenDialogue()
 
+        # Narrative 4-Metric System & Case Board (Etape 1 Redesign)
+        self.metrics = MetricValues()
+        self.investigation = InvestigationManager()
+
         # Instantiated Devices
         self.vfd = VFDDevice()
         self.switch = SwitchDevice()
@@ -88,6 +93,24 @@ class GameEngine:
         except UnicodeEncodeError:
             safe = message.encode("ascii", errors="replace").decode("ascii")
             self.output(safe)
+
+    def record_clue(self, clue_id: str) -> None:
+        """Discover a forensic clue, update the investigation board and adjust trust."""
+        sim_time = f"Dag {self.simulated_day}, time {self.simulated_hour}"
+        newly_found, clue = self.investigation.discover_clue(clue_id, sim_time)
+        if newly_found and clue:
+            self.emit(f"\n🔎 [NYT SPOR TIL SAGSTAVLEN]: {clue.title}")
+            self.emit(f"   Kategori: {clue.category} | Skriv 'sagstavle' eller 'analyser spor {clue.id}'")
+            self.metrics.adjust_tillid(2, f"Nyt spor opdaget: {clue.id}")
+
+    def show_metrics_status(self) -> None:
+        """Display the 4 core plant and security metrics."""
+        self.emit("\n📊 [ANLÆGGETS 4 HOVEDMETRIKKER - NORDIC H2O]:")
+        self.emit(f"  🔧 Drift:      [{self.investigation._render_bar(self.metrics.drift)}] {self.metrics.drift:3d}% (Uptime, vandforsyning, tryk)")
+        self.emit(f"  🛡️ Sikkerhed:  [{self.investigation._render_bar(self.metrics.sikkerhed)}] {self.metrics.sikkerhed:3d}% (Zoner, conduits, firewalls)")
+        self.emit(f"  📜 Compliance: [{self.investigation._render_bar(self.metrics.compliance)}] {self.metrics.compliance:3d}% (NIS2 Artikel 21/23, dokumentation)")
+        self.emit(f"  🤝 Tillid:     [{self.investigation._render_bar(self.metrics.tillid)}] {self.metrics.tillid:3d}% (Hans' stolthed & ledelsens tillid)")
+        self.emit("Skriv 'sagstavle' for at se samtlige spor og mistænkte.")
 
     # -------------------------------------------------------------------------
     # LIFECYCLE & TIMERS
@@ -398,16 +421,43 @@ class GameEngine:
             self.emit("[RYGSÆK] Din rygsæk indeholder: " + ", ".join(sorted(self.player.inventory)))
         elif normalized in {"vis evidens", "evidens", "logbog", "forensik"}:
             self.emit(self.forensics.get_summary())
+        elif normalized in {"sagstavle", "tavle", "board", "case board", "clueboard", "investigation", "efterforskning"}:
+            self.emit(self.investigation.format_clue_board(self.metrics))
+        elif normalized in {"spor", "clues", "evidensliste"}:
+            self.emit(self.investigation.format_clues_list())
+        elif normalized.startswith("analyser spor ") or normalized.startswith("analyser "):
+            s_id = normalized.replace("analyser spor ", "").replace("analyser ", "").strip()
+            self.emit(self.investigation.format_clue_analysis(s_id))
+        elif normalized in {"mistænkte", "mistaenkte", "suspects", "hypoteser"}:
+            self.emit(self.investigation.format_suspects_list())
+        elif normalized.startswith("anklag ") or normalized.startswith("hypotese "):
+            susp_id = normalized.replace("anklag ", "").replace("hypotese ", "").strip()
+            ok, msg = self.investigation.set_prime_suspect(susp_id)
+            self.emit(msg)
+            if ok:
+                self.metrics.adjust_tillid(5, f"Arbejdshypotese fastsat: {susp_id}")
+        elif normalized in {"metrikker", "metrics", "score", "konsekvenser"}:
+            self.show_metrics_status()
         elif normalized in {"indberet hændelse", "early warning", "indberet", "anmeld hændelse"}:
             self.submit_early_warning()
         elif normalized in {"eksporter rapport", "eksport rapport", "gem rapport"}:
             self.export_audit_report()
         elif normalized.startswith("tshark") or normalized in {"man tshark", "cheat tshark", "tshark cheatsheet", "tshark help"}:
             self.flags.add("wireshark-open")
+            if self.room == "pumpehuset":
+                self.record_clue("spor_modbus_flood")
+            elif self.room == "ventil-oen":
+                self.record_clue("spor_dcp_storm")
+                self.record_clue("spor_mac_oui")
             self.emit(self.sniffer.execute_tshark_command(raw, self.room, engine=self))
         elif normalized.startswith("wireshark filter "):
             filt = normalized.removeprefix("wireshark filter ").strip()
             self.flags.add("wireshark-open")
+            if self.room == "pumpehuset":
+                self.record_clue("spor_modbus_flood")
+            elif self.room == "ventil-oen":
+                self.record_clue("spor_dcp_storm")
+                self.record_clue("spor_mac_oui")
             self.emit(f"💡 [TSHARK INFO]: I terminalen anvendes 'tshark -Y \"{filt}\"'. Kører filter for dig:")
             self.emit(self.sniffer.execute_tshark_command(f"tshark -Y \"{filt}\"", self.room, engine=self))
         elif normalized.startswith("wireshark detaljer "):
@@ -417,6 +467,11 @@ class GameEngine:
             self.emit(self.sniffer.execute_tshark_command("tshark -V", self.room, engine=self))
         elif normalized in {"åbn wireshark", "wireshark", "start wireshark", "sniffer"}:
             self.flags.add("wireshark-open")
+            if self.room == "pumpehuset":
+                self.record_clue("spor_modbus_flood")
+            elif self.room == "ventil-oen":
+                self.record_clue("spor_dcp_storm")
+                self.record_clue("spor_mac_oui")
             self.emit(f"💡 [TSHARK INFO]: Kører tshark på '{self.room}_vlan'... (Skriv 'man tshark' for filtre som f.eks. -Y \"modbus\")")
             self.emit(self.sniffer.execute_tshark_command("tshark", self.room, engine=self))
         elif normalized.startswith("gå til ") or normalized.startswith("gaa til "):
@@ -678,6 +733,11 @@ class GameEngine:
             self.pump_deadline_active = False
             self.active_workbench = None
             self.chapter = 2
+            self.metrics.adjust_drift(10, "Pumpe 2 normaliseret til 3.2 Bar")
+            self.metrics.adjust_sikkerhed(25, "Modbus FC06 spærret med DPI-firewall")
+            self.metrics.adjust_tillid(15, "Hans roser rolig motorgang")
+            self.metrics.adjust_compliance(15, "IEC 62443 zone 1 conduit etableret")
+            self.record_clue("spor_modbus_flood")
             self.emit("\n✅ [SCALANCE S615 DPI REGEL AKTIVERET - GULDSTANDARD]:")
             self.emit("Regel oprettet: PERMIT Modbus TCP FC 03 (WinCC SCADA Telemetri)")
             self.emit("Regel oprettet: DROP & LOG Modbus TCP FC 06/16 (Sabotage Register-skrivning)")
@@ -694,6 +754,9 @@ class GameEngine:
         if has_drop_fc6 and not has_allow_fc3:
             self.scada_blind = True
             self.flags.add("scada-blind")
+            self.metrics.adjust_drift(-25, "SCADA blindet - telemetritab")
+            self.metrics.adjust_tillid(-15, "Hans i panik over blinde transmittere")
+            self.metrics.adjust_compliance(-10, "Mangler driftsobservation")
             self.emit("\n⚠️ [FIREWALL-REGEL AKTIVERET - MEN SCADA GIK I FEJL!]:")
             self.emit("Regel oprettet: DROP & LOG Modbus TCP FC 06/16.")
             self.emit("Hov! SCALANCE S615 kører med industriel default-deny policy, og du har IKKE oprettet en ALLOW-regel for FC 03!")
@@ -756,6 +819,17 @@ class GameEngine:
         self.flags.add("pi-removed")
         self.rogue_pi.disconnected = True
         self.rogue_pi.disposition = self.forensics.pi_handling_state
+        if method in {"faraday", "sikr", "pose"}:
+            self.metrics.adjust_sikkerhed(20, "Rogue hardware isoleret")
+            self.metrics.adjust_compliance(25, "Forensisk chain of custody overholdt")
+            self.metrics.adjust_tillid(10, "Professionel håndtering af bevismateriale")
+        elif method in {"trash", "skraldespand"}:
+            self.metrics.adjust_compliance(-30, "Destruktion af retsmedicinsk bevis")
+            self.metrics.adjust_tillid(-10, "Hans utilfreds med sjusk")
+        elif method in {"reuse", "genbrug", "infected", "sd-kort"}:
+            self.metrics.adjust_sikkerhed(-25, "Kompromitteret udstyr genanvendt")
+            self.metrics.adjust_compliance(-25, "Sikkerhedsbrud på privat hardware")
+        self.record_clue("spor_sort_boks")
         self.emit("\nDu kan nu udskifte den gamle D-Link switch med den industrielle SCALANCE XB-200 med MRP-ring!")
 
     def unplug_switch_abruptly(self) -> None:
@@ -765,6 +839,8 @@ class GameEngine:
         if not self.cavitation_deadline_active:
             self.cavitation_deadline_started_at = time.monotonic()
             self.cavitation_deadline_active = True
+            self.metrics.adjust_drift(-20, "Kaotisk nedlukning af ventiler - kavitation truende")
+            self.metrics.adjust_tillid(-10, "Hans bange for ødelagt rørnetværk")
             self.emit("\n🚨 [AKUT KAVITATION-ALARM - 90 SEKUNDER TIL DESTRUKTION!]:")
             self.emit("Du flår kablerne ud af D-Link switchen uden forudgående forberedelse!")
             self.emit("Ventilerne låser øjeblikkeligt i uheldig position, modtrykket i hovedrøret forsvinder, og Pumpe 2 begynder at KAVITERE voldsomt!")
@@ -788,6 +864,11 @@ class GameEngine:
         self.cavitation_deadline_active = False
         self.flags.add("chapter-2-done")
         self.chapter = 3
+        self.metrics.adjust_sikkerhed(20, "Layer 2 MRP og Port Security aktiveret")
+        self.metrics.adjust_compliance(15, "NIS2 netværkssegmentering zone 2")
+        self.metrics.adjust_tillid(10, "Hans lettet over Profinet-stabilitet")
+        self.record_clue("spor_dcp_storm")
+        self.record_clue("spor_mac_oui")
         self.emit("\n🏆 [LØSNING GENNEMFØRT - IEC 62443-3-3 & IEC 62439-2]:")
         self.emit("Siemens SCALANCE XB-200 managed switch monteret på DIN-skinnen med redundant 24V forsyning.")
         self.emit("PROFINET Media Redundancy Protocol (MRP) aktiv! Ventilerne synkroniserer, og Pumpe 2 trykket er stabilt!")
@@ -800,6 +881,8 @@ class GameEngine:
     def take_plc_backup(self) -> None:
         self.flags.add("backup-taken")
         self.forensics.log_usb_backup("S7-1500_CPU_1516F", "9e8a7c2b5d4f1092837465abcdeffedc")
+        self.metrics.adjust_compliance(10, "Offline gylden backup sikret")
+        self.metrics.adjust_tillid(5, "Hans tilfreds med teknisk forsigtighed")
         self.emit("\n💾 [OFFLINE GYLDEN BACKUP SIKRET - NIS2 ARTIKEL 21.2.c]:")
         self.emit("Du indsætter det krypterede USB-stik og gemmer en fuld offline kopi af:")
         self.emit("  • Hardwarekonfiguration (Protection Level, I/O-adresser)")
@@ -810,6 +893,9 @@ class GameEngine:
         if "backup-taken" not in self.flags:
             self.plc_defect_stop = True
             self.flags.add("plc-defect-stop")
+            self.metrics.adjust_drift(-25, "PLC i DEFECTIVE STOP ved mislykket download")
+            self.metrics.adjust_tillid(-15, "Hans skuffet over manglende backup")
+            self.record_clue("spor_plc_stop_buffer")
             self.emit("\n🚨 [KORRUPT OVERFØRSEL - PLC GÅET I DEFECTIVE STOP]:")
             self.emit("Du forsøgte at overføre TIA-konfigurationen uden en forudgående offline backup!")
             self.emit("Et netværksudfald under overførslen medførte en CRC-fejl, der korrumperede datablok DB1.")
@@ -819,6 +905,11 @@ class GameEngine:
 
         self.flags.add("chapter-3-done")
         self.chapter = 4
+        self.metrics.adjust_drift(15, "S7-1500 i stabil RUN")
+        self.metrics.adjust_sikkerhed(20, "Protection Level 3 og PUT/GET deaktiveret")
+        self.metrics.adjust_compliance(15, "TIA Portal sikkerhedskonfiguration opdateret")
+        self.metrics.adjust_tillid(10, "Hans stolt over grøn RUN diode")
+        self.record_clue("spor_plc_stop_buffer")
         self.emit("\n🏆 [LØSNING GENNEMFØRT - TIA SECURITY HARDENING]:")
         self.emit("  • Adgangsniveau sat til: 'Læse-/skriveadgang beskyttet med adgangskode' (Level 3)")
         self.emit("  • 'Permit access with PUT/GET communication from remote partner' er DEAKTIVERET.")
@@ -828,6 +919,9 @@ class GameEngine:
         self.emit("'Skynd dig til KONTROLRUMMET! Vores SCADA-server lækker data, og der sidder en mistænkelig 4G-router!'")
 
     def force_cpu_run_fails(self) -> None:
+        self.metrics.adjust_drift(-25, "Koldstart fejlede - CPU i DEFECTIVE STOP")
+        self.metrics.adjust_tillid(-15, "Hans ryster på hovedet over koldstartsforsøg")
+        self.record_clue("spor_plc_stop_buffer")
         self.emit("\n⚠️ [KOLDSTART FEJLEDE - ANGREBSLOOP AKTIVERET]:")
         self.emit("Du drejer nøgleomskifteren på CPU'en fra STOP til RUN uden at have sikret netværket...")
         self.emit("Angriberens loop fanger opstarten og overskriver øjeblikkeligt DB1 med en byte-bomb på port 102!")
@@ -835,6 +929,8 @@ class GameEngine:
 
     def block_port_102_passivates_safety(self) -> None:
         self.plc.f_passivated = True
+        self.metrics.adjust_drift(-35, "Port 102 blokering kappede PROFIsafe - anlæg nødbremset")
+        self.metrics.adjust_tillid(-20, "Hans chokeret over passiveret F-I/O")
         self.emit("\n🚨 [ALARM: F-I/O PASSIVERING & NØDSTOP - EN ISO 13849 / IEC 62061]:")
         self.emit("Du blokerede port 102 totalt i cellens firewall!")
         self.emit("Det stoppede angriberen, men kappede samtidig safety-kommunikationen mellem CPU 1516F og de decentrale ET 200SP I/O-moduler.")
@@ -843,12 +939,16 @@ class GameEngine:
 
     def live_firmware_patch_corrupts(self) -> None:
         self.plc.bootloader_locked = True
+        self.metrics.adjust_drift(-30, "Bootloader låst efter MitM firmware corrupt")
+        self.metrics.adjust_compliance(-20, "Overtrædelse af supply chain krav")
         self.emit("\n🚨 [SUPPLY CHAIN OVERTRÆDELSE - BOOTLOADER LÅST]:")
         self.emit("Du downloadede en ny firmware-pakke over det inficerede netværk uden at verificere SHA-256 hash-værdien!")
         self.emit("Angriberen udførte et Man-in-the-Middle angreb og injicerede en korrupt bootloader-blok.")
         self.emit("CPU'en nægter at boote og kræver en fabriksnulstilling (NIS2 Artikel 21.2.e overtrædelse).")
 
     def direct_laptop_arp_poisoned(self) -> None:
+        self.metrics.adjust_sikkerhed(-15, "Laptop kompromitteret af ARP-spoofing")
+        self.metrics.adjust_drift(-15, "Sikkerhedsrelæ koblede fra")
         self.emit("\n⚠️ [ARP-SPOOFING KAPRET TIA-SESSION]:")
         self.emit("Du tilsluttede din bærbare direkte i CPU'ens port uden at isolere din egen IP.")
         self.emit("Angriberens ARP-spoofing opsnappede din ingeniørsession og forsøgte at injicere et uautoriseret OB-kald.")
@@ -858,6 +958,8 @@ class GameEngine:
         self.plc_defect_stop = False
         self.flags.discard("plc-defect-stop")
         self.flags.add("backup-taken")
+        self.metrics.adjust_drift(15, "DB1 genskabt fra autoriseret backup")
+        self.metrics.adjust_tillid(10, "Hans lettet over genskabt database")
         self.emit("\n✅ [DB1 GENDANNET FRA SIKKERHEDSKOPI]:")
         self.emit("Du overfører den sunde DB1-blok fra det autoriserede USB-stik. STOP-koden 0x4542 forsvinder!")
 
@@ -866,6 +968,8 @@ class GameEngine:
     # -------------------------------------------------------------------------
     def trust_scada_certificate(self) -> None:
         self.flags.add("cert-trusted")
+        self.metrics.adjust_compliance(10, "X.509 certifikat flyttet til Trusted")
+        self.metrics.adjust_tillid(5, "SCADA forbinder sikkert")
         self.emit("\n📜 [X.509 CERTIFIKAT GODKENDT]:")
         self.emit("I OPC UA certifikat-truststoren flytter du 'WinCC_SCADA_Client_Cert_2026.der' fra mappen 'Rejected' til 'Trusted'.")
         self.emit("Serveren accepterer nu SCADA-klientens kryptografiske identitet!")
@@ -873,6 +977,8 @@ class GameEngine:
 
     def enable_opc_crypto(self) -> None:
         self.flags.add("opc-crypto-active")
+        self.metrics.adjust_sikkerhed(15, "Basic256Sha256 kryptering aktiveret")
+        self.record_clue("spor_opc_leak")
         self.emit("\n🔒 [OPC UA KRYPTERING AKTIVERET]:")
         self.emit("SecurityPolicy sat til 'Basic256Sha256' og MessageSecurityMode sat til 'SignAndEncrypt'.")
         self.emit("Al kommunikation på port 4840 er nu beskyttet mod aflytning og manipulation jf. NIS2 Artikel 21.2.h!")
@@ -880,12 +986,17 @@ class GameEngine:
 
     def disable_opc_anonymous(self) -> None:
         self.flags.add("anon-disabled")
+        self.metrics.adjust_sikkerhed(10, "Anonymous token deaktiveret i OPC UA")
+        self.record_clue("spor_opc_leak")
         self.emit("\n🚫 [ANONYM ADGANG DEAKTIVERET]:")
         self.emit("Anonymous UserTokenType er fjernet fra endpointet. Al adgang kræver nu X.509 certifikat eller stærke RBAC-brugeroplysninger.")
         self.check_chapter_4_completion()
 
     def disconnect_4g_router(self) -> None:
         self.flags.add("router-disconnected")
+        self.metrics.adjust_sikkerhed(20, "Uautoriseret 4G router afbrudt")
+        self.metrics.adjust_compliance(15, "Fysisk adgangskontrol og IDMZ genoprettet")
+        self.record_clue("spor_4g_dongle")
         self.emit("\n🔌 [UAUTORISERET 4G-ROUTER FRAKOBLET & KONFISKERET]:")
         self.emit("Du trækker strømstikket til Teltonika RUT950 4G-routeren bag SCADA-racket og fjerner WAN-kablet.")
         self.emit("Den uautoriserede cellulære bagdør til internettet er lukket! IDMZ (Purdue Level 3.5) er genetableret.")
@@ -897,6 +1008,7 @@ class GameEngine:
             self.flags.add("chapter-4-done")
             self.flags.add("opc-hardened")
             self.chapter = 5
+            self.metrics.adjust_tillid(10, "Hans melder anlæg klar til revision")
             self.emit("\n🏆 [LØSNING GENNEMFØRT - NIS2 ARTIKEL 21 & IEC 62443-3-2 IDMZ]:")
             self.emit("OPC UA serveren kører nu med fuld kryptografisk signering, kryptering og certifikatgodkendelse.")
             self.emit("Alle bagdøre er lukkede, og anlæggets zoner er isolerede og deterministiske!")
@@ -926,6 +1038,7 @@ class GameEngine:
                     r_obj.reveal_pi(self)
                 self.rogue_pi.reveal()
                 self.flags.add("pi-revealed")
+                self.record_clue("spor_sort_boks")
                 self.emit("\n🔍 [FYSISK EFTERFORSKNING - ROGUE HARDWARE FUNDET!]:")
                 self.emit("Du lyser op under kabelbakken bag Festo-ventilerne med din lommelygte...")
                 self.emit("Der sidder en sort boks tapet fast med gaffa-tape! Et blåt Cat6-kabel er ført direkte ind i D-Link switchen.")
@@ -943,7 +1056,8 @@ class GameEngine:
             self.emit("En standard 35mm DIN-skinne (EN 60715 TS35) i industrielt stål til montering af automationsudstyr.")
             return
 
-        if "pumpe" in norm:
+        if "pumpe" in norm or "manometer" in norm:
+            self.record_clue("spor_manometer_rystelser")
             self.emit(self.vfd.get_telemetry(self))
             return
         if "frekvens" in norm or "vfd" in norm:
@@ -957,14 +1071,21 @@ class GameEngine:
             self.emit(self.switch.get_telemetry(self))
             return
         if "s7" in norm or "plc" in norm:
+            self.record_clue("spor_plc_stop_buffer")
             self.emit(self.plc.description)
             self.emit(self.plc.get_telemetry(self))
             return
+        if "usb" in norm or "backup" in norm:
+            self.record_clue("spor_usb_backup")
+            self.emit("Du undersøger USB-stikket: 'NordicH2O_Rev12_LARS.zap16'. Indeholder Siemens TIA V16 projekt.")
+            return
         if "opc" in norm:
+            self.record_clue("spor_opc_leak")
             self.emit(self.opcua.description)
             self.emit(self.opcua.get_telemetry(self))
             return
         if "router" in norm or "4g" in norm:
+            self.record_clue("spor_4g_dongle")
             self.emit("Teltonika RUT950 4G-router. Den er tilsluttet en ekstern mobilmast og har en aktiv VPN-tunnel til udlandet.")
             return
 
@@ -973,11 +1094,13 @@ class GameEngine:
     def talk_to(self, character: str) -> None:
         norm = character.lower().strip()
         if "hans" in norm:
+            self.record_clue("spor_morten_rapport")
             greeting = self.hans.get_greeting(self)
             self.emit(f"\n{greeting}")
             if random.random() < 0.4:
                 self.emit(f"\n{self.hans.get_anecdote()}")
         elif "kirsten" in norm or "revisor" in norm:
+            self.record_clue("spor_kim_nattevagt")
             if self.chapter == 5:
                 self.complete_audit()
             else:
@@ -989,6 +1112,10 @@ class GameEngine:
         success, msg = self.incident.submit_early_warning(self.simulated_day, self.simulated_hour, "Sabotage af procespumper og feldbus.")
         if success:
             self.flags.add("early-warning-reported")
+            self.metrics.adjust_compliance(20, "NIS2 24-timers Early Warning indsendt rettidigt")
+            self.metrics.adjust_tillid(10, "Ledelsen anerkender rettidig indberetning")
+        else:
+            self.metrics.adjust_compliance(-10, "Frist for 24-timers Early Warning overskredet")
         self.emit(f"\n{msg}")
 
     def export_audit_report(self) -> None:
@@ -1037,9 +1164,13 @@ class GameEngine:
         self.emit("  GÅ TIL <zone>             Skift rum (indgangen, pumpehuset, ventil-øen, el-tavlen, kontrolrummet)")
         self.emit("  UNDERSØG <komponent>      Inspicér maskine, kabelbakke eller enhed")
         self.emit("  TAL MED HANS              Få praktisk vejledning og erfaringer fra driftsteknikeren")
-        self.emit("  ÅBN WIRESHARK             Start den integrerede terminal-sniffer")
-        self.emit("  WIRESHARK FILTER <tekst>  Filtrer pakker (f.eks. 'modbus.func_code == 6' eller 'b8:27:eb')")
-        self.emit("  WIRESHARK DETALJER <nr>   Dybdegående OSI-lags inspektion af en pakke")
+        self.emit("  SAGSTAVLE                 Vis efterforskningstavle, mistænkte og de 4 anlægsmetrikker")
+        self.emit("  SPOR                      Vis opdagede tekniske og fysiske spor")
+        self.emit("  ANALYSER SPOR <id>        Udfør retsmedicinsk/teknisk dybdeanalyse af et fundet spor")
+        self.emit("  MISTÆNKTE                 Vis liste over mistænkte personer og arbejdshypoteser")
+        self.emit("  ANKLAG <id>               Udnævn din primære mistænkte på sagstavlen")
+        self.emit("  METRIKKER                 Vis anlæggets status for Drift, Sikkerhed, Compliance og Tillid")
+        self.emit("  TSHARK                    Start netværksanalyse (f.eks. 'tshark -Y \"modbus\"' eller 'man tshark')")
         self.emit("  INDBERET HÆNDELSE         Indsend lovpligtig NIS2 24-timers Early Warning")
         self.emit("  VIS EVIDENS               Gennemse digital Chain of Custody journal")
         self.emit("  STATUS                    Vis aktuel arbejdsdag, tidsfrist og kapitelmål")
@@ -1055,6 +1186,7 @@ class GameEngine:
         self.emit(f"\n[STATUS] KAPITEL {self.chapter}/5 | Zone: {r.title} ({r.purdue_level})")
         self.emit(f"Mål: {OBJECTIVES.get(self.chapter, 'Gennemfør audit')}")
         self.emit(f"Arbejdsdag {self.simulated_day}/5, time {self.simulated_hour}/8 | Tid til audit: {self.time_display}")
+        self.emit(f"Anlægstilstand: 🔧 Drift: {self.metrics.drift}% | 🛡️ Sikkerhed: {self.metrics.sikkerhed}% | 📜 Compliance: {self.metrics.compliance}% | 🤝 Tillid: {self.metrics.tillid}%")
         if self.cavitation_deadline_active:
             self.emit(f"🚨 AKUT KAVITATION-ALARM: {self.cavitation_time_display} tilbage før pumperne ødelægges!")
         elif self.pump_deadline_active:

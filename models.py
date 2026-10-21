@@ -3,6 +3,77 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass
+class MetricValues:
+    """The 4 core operational and security dimensions of Nordic H2O Utility."""
+
+    drift: int = 80          # 0-100%: Uptime, vandforsyning, trykstabilitet, pumpetilstand
+    sikkerhed: int = 25      # 0-100%: Firewall, segmentering, hardening, lukkede sårbarheder
+    compliance: int = 40     # 0-100%: NIS2 Artikel 21/23, dokumentation, chain of custody
+    tillid: int = 50         # 0-100%: Hans' partnerskab og moral, ledelsens tiltro
+
+    history: list[dict[str, Any]] = field(default_factory=list)
+
+    def adjust_drift(self, delta: int, reason: str = "") -> None:
+        old = self.drift
+        self.drift = max(0, min(100, self.drift + delta))
+        self.history.append({"metric": "drift", "old": old, "new": self.drift, "delta": delta, "reason": reason})
+
+    def adjust_sikkerhed(self, delta: int, reason: str = "") -> None:
+        old = self.sikkerhed
+        self.sikkerhed = max(0, min(100, self.sikkerhed + delta))
+        self.history.append({"metric": "sikkerhed", "old": old, "new": self.sikkerhed, "delta": delta, "reason": reason})
+
+    def adjust_compliance(self, delta: int, reason: str = "") -> None:
+        old = self.compliance
+        self.compliance = max(0, min(100, self.compliance + delta))
+        self.history.append({"metric": "compliance", "old": old, "new": self.compliance, "delta": delta, "reason": reason})
+
+    def adjust_tillid(self, delta: int, reason: str = "") -> None:
+        old = self.tillid
+        self.tillid = max(0, min(100, self.tillid + delta))
+        self.history.append({"metric": "tillid", "old": old, "new": self.tillid, "delta": delta, "reason": reason})
+
+    def get_summary(self) -> dict[str, int]:
+        return {
+            "drift": self.drift,
+            "sikkerhed": self.sikkerhed,
+            "compliance": self.compliance,
+            "tillid": self.tillid,
+        }
+
+
+@dataclass
+class Clue:
+    """An individual piece of forensic or investigative evidence found at the plant."""
+
+    id: str
+    title: str
+    category: str            # "Netværk", "Fysisk", "Systemlog", "Vidneudsagn", "Konfiguration"
+    discovery_room: str
+    description: str
+    analysis: str
+    associated_suspects: list[str] = field(default_factory=list)
+    discovered: bool = False
+    discovered_time: str = ""
+
+
+@dataclass
+class Suspect:
+    """A person of interest or hypothesis regarding the incident at Nordic H2O Utility."""
+
+    id: str
+    name: str
+    role: str
+    theory: str
+    opportunity: str
+    motive: str
+    suspicion_score: int = 0  # 0-100%
+    status: str = "Aktiv efterforskning"  # "Aktiv efterforskning", "Hovedmistænkt", "Udelukket", "Bekræftet"
+    notes: list[str] = field(default_factory=list)
 
 
 @dataclass
