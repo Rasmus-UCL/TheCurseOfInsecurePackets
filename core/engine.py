@@ -650,29 +650,102 @@ class GameEngine:
         self.active_workbench = None
         self.emit("\n🚪 Du træder tilbage fra arbejdsbænken og ser ud over rummet.")
 
-    def solve_chapter_1(self) -> None:
+    def apply_firewall_rule(self, cmd: str) -> None:
         if self.breaker_tripped:
             self.emit("⚠️ Frekvensomformeren er strømløs på grund af udløst K1-relæ! Nulstil K1 i El-tavlen først.")
             return
+
+        if not self.vfd_mounted or not self.vfd_cabled:
+            self.vfd_mounted = True
+            self.vfd_cabled = True
+            self.wrong_cabling = False
+            self.emit("\n(SCALANCE S615 monteres på TS35 DIN-skinnen og patchkabler forbindes til LAN P1 og WAN P5)")
+
         if self.wrong_cabling:
-            self.emit("⚠️ Kan ikke aktivere Modbus DPI: Kablerne er krydset forkert! VFD sidder i WAN-porten i stedet for LAN.")
-            self.emit("Byt om på kablerne ('kobl kabler til scalance' eller valg 2), så frekvensomformeren sidder i LAN P1!")
+            self.emit("⚠️ Kan ikke anvende firewall-regler: Kablerne er krydset forkert! VFD sidder i WAN-porten i stedet for LAN.")
+            self.emit("Byt om på kablerne ('kobl kabler til scalance'), så frekvensomformeren sidder i beskyttet LAN P1!")
             return
-        self.vfd_mounted = True
-        self.vfd_cabled = True
-        self.wrong_cabling = False
-        self.active_workbench = None
-        self.scada_blind = False
-        self.flags.discard("scada-blind")
-        self.pump_deadline_active = False
-        self.flags.add("chapter-1-done")
-        self.chapter = 2
-        self.emit("\n🏆 [LØSNING GENNEMFØRT - IEC 62443-3-2 ZONER & CONDUITS]:")
-        self.emit("SCALANCE S615 sikkerhedsrouteren er monteret på DIN-skinnen og kablerne er verificeret.")
-        self.emit("Modbus DPI-regelsæt aktivt: Tillader FC 03 (Læsning fra SCADA), men dropper FC 06 (Uautoriseret skrivning).")
-        self.emit("Pumpe 2's omdrejningstal falder til rolige 450 RPM. Manometeret stabiliserer sig på 42.0 Bar!")
-        self.emit("\n[MÅL] NYT MÅL: Kapitel 2 aktiveret! Hans kalder over radioen:")
-        self.emit("'Skynd dig til VENTIL-ØEN! Ventilerne danser rundt i et PROFINET kaos!'")
+
+        norm_cmd = cmd.lower()
+        has_allow_fc3 = any(k in norm_cmd for k in {"allow-fc 3", "allow-fc3", "allow fc 3", "allow fc03", "allow fc 03", "allow-fc 03", "tillad fc 03", "tillad fc03", "tillad fc 3"})
+        has_drop_fc6 = any(k in norm_cmd for k in {"drop-fc 6", "drop-fc6", "drop fc 6", "drop fc06", "drop fc 06", "drop-fc 06", "drop-fc 6,16", "drop-fc 6, 16", "afvis fc 06", "afvis fc 6", "afvis fc06"})
+
+        # Case A: Correct rule (Allow FC 03 AND Drop FC 06/16)
+        if has_allow_fc3 and (has_drop_fc6 or "drop" in norm_cmd):
+            self.scada_blind = False
+            self.flags.discard("scada-blind")
+            self.flags.add("chapter-1-done")
+            self.pump_deadline_active = False
+            self.active_workbench = None
+            self.chapter = 2
+            self.emit("\n✅ [SCALANCE S615 DPI REGEL AKTIVERET - GULDSTANDARD]:")
+            self.emit("Regel oprettet: PERMIT Modbus TCP FC 03 (WinCC SCADA Telemetri)")
+            self.emit("Regel oprettet: DROP & LOG Modbus TCP FC 06/16 (Sabotage Register-skrivning)")
+            self.emit("Default Policy: DROP (Conduit IEC 62443-3-2)")
+            self.emit("\n🎉 RESULTAT:")
+            self.emit("  • WinCC SCADA modtager ubrudt telemetri via FC 03.")
+            self.emit("  • Angriberens uautoriserede Modbus FC 06-pakker droppes ved indgangen til cellen.")
+            self.emit("  • Pumpe 2's omdrejningstal falder til 450 RPM. Manometeret stabiliserer sig på 42.0 Bar!")
+            self.emit("\n[MÅL] NYT MÅL: Kapitel 2 aktiveret! Hans kalder over radioen:")
+            self.emit("'Skynd dig til VENTIL-ØEN! Ventilerne danser rundt i et PROFINET kaos!'")
+            return
+
+        # Case B: The critical mistake: Forgetting allow FC 03 (only drop FC 06)
+        if has_drop_fc6 and not has_allow_fc3:
+            self.scada_blind = True
+            self.flags.add("scada-blind")
+            self.emit("\n⚠️ [FIREWALL-REGEL AKTIVERET - MEN SCADA GIK I FEJL!]:")
+            self.emit("Regel oprettet: DROP & LOG Modbus TCP FC 06/16.")
+            self.emit("Hov! SCALANCE S615 kører med industriel default-deny policy, og du har IKKE oprettet en ALLOW-regel for FC 03!")
+            self.emit("\n🚨 SCADA-ALARM HYLER I KONTROLRUMMET:")
+            self.emit("\"ALARM: TAB AF PROCESOVERVÅGNING PÅ PUMPE 2! (WinCC Modbus Timeout Port 502)\"")
+            self.emit("\nHans McDonald kalder febrilsk over radioen:")
+            self.emit("\"Hov, makker! Hvad skete der lige?! Pumpe 2 trykket på driftsskærmen viser '??? BAR' og blinker rødt!")
+            self.emit("Du har nok afvist angriberens FC 06 sabotage, men du GLEMTE at tillade WinCC SCADA's FC 03 (Read Holding Registers)!")
+            self.emit("Firewallen blokerer alt der ikke er eksplicit tilladt, så vi kan slet ikke se om anlægget kører!\"")
+            self.emit("\nLæresætning (IEC 62443 / NIS2 Artikel 21):")
+            self.emit("I OT-sikkerhed er Oppetid & Observability (Availability) lige så vigtigt som integritet!")
+            self.emit("En firewall-regel i et industrielt conduit skal altid eksplicit tillade legitim procesovervågning (FC 03).")
+            self.emit("\n💡 Prøv at køre 'tshark -Y \"modbus\"' for at se de blokerede SCADA-pakker.")
+            self.emit("Ret fejlen ved at tilføje allow-reglen: 'firewall rule add --allow-fc 3 --drop-fc 6'")
+            return
+
+        # Case C: Blocking all port 502
+        if any(k in norm_cmd for k in {"drop port 502", "bloker port 502", "drop modbus", "drop all"}):
+            self.block_port_502_blindly()
+            return
+
+        # Case D: Allow all
+        if "allow all" in norm_cmd or "allow modbus" in norm_cmd:
+            self.emit("\n⚠️ [FIREWALL-REGEL FOR ÅBEN - SABOTAGE FORTSÆTTER]:")
+            self.emit("Du oprettede en regel der tillader al Modbus TCP-trafik uden inspektion.")
+            self.emit("Angriberen overskriver fortsat register 0x0000 med 1337! Pumpe 2 skriger videre!")
+            return
+
+        self.emit("Ukendt firewall-kommando. Eksempel: 'firewall rule add --allow-fc 3 --drop-fc 6' eller 'firewall status'")
+
+    def show_firewall_status(self) -> None:
+        self.emit("\n┌── SCALANCE S615 FIREWALL STATUS & REGELTABEL ───────────────────────")
+        self.emit(f"│ Fysisk montage: {'OK (TS35 DIN-skinne)' if self.vfd_mounted else 'IKKE MONTERET'}")
+        self.emit(f"│ Kabling:        {'OK (VFD: LAN P1, Uplink: WAN P5)' if (self.vfd_cabled and not self.wrong_cabling) else 'FORKERT ELLER MANGLER'}")
+        self.emit("│")
+        if "chapter-1-done" in self.flags:
+            self.emit("│ Regel #1: Modbus TCP FC 03 (Read)      -> ACTION: PERMIT (SCADA OK)")
+            self.emit("│ Regel #2: Modbus TCP FC 06/16 (Write)  -> ACTION: DROP & LOG (Sabotage blokeret)")
+            self.emit("│ Default Policy: DROP (Conduit IEC 62443-3-2)")
+            self.emit("│ Status: ✅ OPTIMAL DRIFT & SIKKERHED (Pumpe 2: 42.0 Bar)")
+        elif self.scada_blind:
+            self.emit("│ Regel #1: Modbus TCP FC 06/16 (Write)  -> ACTION: DROP & LOG")
+            self.emit("│ Regel #2: Modbus TCP FC 03 (Read)      -> ACTION: [MANGLER!]")
+            self.emit("│ Default Policy: DROP")
+            self.emit("│ Status: 🚨 FEJL - SCADA BLIND! Mangler 'allow-fc 3'!")
+        else:
+            self.emit("│ Regel #1: [INGEN REGLER AKTIVE - ANLÆG UBESKYTTET]")
+            self.emit("│ Status: ⚠️ SÅRBAR OVER FOR SABOTAGE")
+        self.emit("└─────────────────────────────────────────────────────────────────────")
+
+    def solve_chapter_1(self) -> None:
+        self.apply_firewall_rule("firewall rule add --allow-fc 3 --drop-fc 6")
 
     # -------------------------------------------------------------------------
     # CHAPTER 2 ACTIONS

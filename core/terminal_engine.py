@@ -27,7 +27,7 @@ class TSharkEngine:
                 return [
                     {
                         "no": "001", "time": "0.000000", "src": "10.20.1.5", "dst": "10.20.1.20",
-                        "proto": "Modbus", "func": "3", "info": "FC 03 Read Holding Registers [BLOKERET AF FIREWALL - INGEN ALLOW-REGEL!]",
+                        "proto": "Modbus", "func": "3", "info": "FC 03 Read Holding Registers [BLOKERET AF FIREWALL - INGEN ALLOW-REGEL FOR FC 03!]",
                         "dissection": [
                             "Frame 1: 66 bytes på kablet (VLAN 10)",
                             "Internet Protocol Version 4, Src: 10.20.1.5 (WinCC SCADA), Dst: 10.20.1.20 (VFD)",
@@ -38,7 +38,7 @@ class TSharkEngine:
                     },
                     {
                         "no": "002", "time": "0.001150", "src": "10.20.1.5", "dst": "10.20.1.20",
-                        "proto": "TCP", "func": "RST", "info": "[TCP TIMEOUT / CONNECTION RESET] SCADA modtager ingen telemetri!",
+                        "proto": "Modbus", "func": "RST", "info": "[TCP TIMEOUT / CONNECTION RESET] SCADA modtager ingen telemetri!",
                         "dissection": [
                             "Frame 2: 54 bytes på kablet (VLAN 10)",
                             "WinCC SCADA Process Telemetry: TIMEOUT - intet svar fra Pumpe 2.",

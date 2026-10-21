@@ -236,7 +236,11 @@ class GameCanvas(tk.Canvas):
 
         if name == "pumpe 2":
             icon_type = "🚰 CENTRIFUGALPUMPE"
-            if "chapter-1-done" in flags:
+            if getattr(self.engine, "scada_blind", False):
+                badge_text = "TRYK UKENDT (TIMEOUT)"
+                badge_color = "#ef4444"
+                sub_info = "Mangler FC 03 allow!"
+            elif "chapter-1-done" in flags:
                 badge_text = "42 BAR (OK)"
                 badge_color = "#4ade80"
                 sub_info = "Stabil drift"
@@ -263,6 +267,20 @@ class GameCanvas(tk.Canvas):
                 badge_text = "KLAR TIL MONTAGE"
                 badge_color = "#38bdf8"
                 sub_info = "Klik for at åbne"
+        elif name == "scada":
+            icon_type = "🖥️ WINCC SCADA HMI"
+            if getattr(self.engine, "scada_blind", False):
+                badge_text = "TIMEOUT / COMM ERROR"
+                badge_color = "#ef4444"
+                sub_info = "FC 03 mangler allow-regel!"
+            elif "chapter-1-done" in flags:
+                badge_text = "OVERVÅGNING OK"
+                badge_color = "#4ade80"
+                sub_info = "Pumpe 2 telemetri OK"
+            else:
+                badge_text = "ALARM INDIKATION"
+                badge_color = "#f59e0b"
+                sub_info = "Overvåger Port 502"
         elif name == "frekvensomformer":
             icon_type = "⚡ VFD DRIVER"
             if getattr(self.engine, "breaker_tripped", False):
@@ -433,11 +451,11 @@ class GameCanvas(tk.Canvas):
             self.canvas_buttons["hud_faraday"] = (btn_x, btn_y1, btn_x + bw, btn_y2, lambda: self.master_app.command("sikr pi i faraday-pose"))
             btn_x += bw + 12
 
-        # Button: Wireshark on all hotspots
-        ws_bw = 160
+        # Button: tshark on all hotspots
+        ws_bw = 180
         self.create_rectangle(btn_x, btn_y1, btn_x + ws_bw, btn_y2, fill="#162c3d", outline="#38bdf8", width=1)
-        self.create_text(btn_x + ws_bw // 2, (btn_y1 + btn_y2) // 2, text="📊 Kør Wireshark", fill="#e0f2fe", font=("Segoe UI", 9, "bold"))
-        self.canvas_buttons["hud_wireshark"] = (btn_x, btn_y1, btn_x + ws_bw, btn_y2, lambda: self.master_app.command("wireshark"))
+        self.create_text(btn_x + ws_bw // 2, (btn_y1 + btn_y2) // 2, text="📊 Kør tshark CLI", fill="#e0f2fe", font=("Segoe UI", 9, "bold"))
+        self.canvas_buttons["hud_wireshark"] = (btn_x, btn_y1, btn_x + ws_bw, btn_y2, lambda: self.master_app.command("tshark -Y \"modbus\"" if self.engine.room == "pumpehuset" else "tshark"))
 
         self.create_text(hx1 + 14, hy1 + 105, anchor="nw", text="💡 TIP: Klik på knapperne foroven eller tast tal (1-N) i terminalen forneden.", fill="#38bdf8", font=("Segoe UI", 8, "italic"))
 
@@ -498,9 +516,15 @@ class GameCanvas(tk.Canvas):
         # Slot 3: Modbus DPI
         c3_x1, c3_y1, c3_x2, c3_y2 = 520, 75, 740, 245
         mode = getattr(self.engine, "game_mode", "teach")
+        is_scada_blind = getattr(self.engine, "scada_blind", False)
+
         if not is_cabled or is_wrong:
             self.create_rectangle(c3_x1, c3_y1, c3_x2, c3_y2, fill="#090e14", outline="#334155", width=1)
             self.create_text(c3_x1 + 15, c3_y1 + 50, anchor="nw", text="TRIN 3: MODBUS DPI\n(Kræver korrekt kabling)", fill="#64748b", font=("Segoe UI", 9))
+        elif is_scada_blind:
+            self.create_rectangle(c3_x1, c3_y1, c3_x2, c3_y2, fill="#2b1414", outline="#ef4444", width=2)
+            self.create_text(c3_x1 + 10, c3_y1 + 15, anchor="nw", text="🚨 SCADA BLIND (TIMEOUT)!\nFC 06 er blokeret, men du mangler\nat tillade FC 03 (Læsning)!\n\n[ KLIK FOR AT TILLADE FC 03 ]", fill="#f87171", font=("Segoe UI", 8, "bold"))
+            self.hotspot_rects["vfd_dpi"] = (c3_x1, c3_y1, c3_x2, c3_y2)
         elif not is_done:
             self.create_rectangle(c3_x1, c3_y1, c3_x2, c3_y2, fill="#0b2942", outline="#38bdf8", width=2, dash=(6, 3))
             s3_text = "TRIN 3: AKTIVER DPI\n(Guldstandard)\n[ KLIK FOR AT AKTIVERE ]\nTillad FC 03 (Læsning)\nDrop FC 06/16 (Sabotage)" if mode == "teach" else "TRIN 3: AKTIVER MODBUS DPI\n\n[ KLIK FOR AT AKTIVERE ]\nTillad FC 03 (Læsning)\nDrop FC 06/16 (Sabotage)"
@@ -514,14 +538,19 @@ class GameCanvas(tk.Canvas):
         # Slot 4: Faldgrube / Test knap
         c4_x1, c4_y1, c4_x2, c4_y2 = 760, 75, 960, 245
         self.create_rectangle(c4_x1, c4_y1, c4_x2, c4_y2, fill="#1c1917", outline="#78716c", width=1)
-        s4_header = "FALDGRUBE TEST:" if mode == "teach" else "TEST-SCENARIE:"
-        s4_sub = "Test hvad der sker hvis\nkablerne krydses forkert" if mode == "teach" else "Forbind VFD til WAN P5\nog switchen til LAN P1"
-        self.create_text(c4_x1 + 12, c4_y1 + 20, anchor="nw", text=f"{s4_header}\n\n[ BYT OM PÅ WAN/LAN ]\n{s4_sub}", fill="#fbbf24", font=("Segoe UI", 8, "bold"))
-        self.hotspot_rects["vfd_wrong_cable"] = (c4_x1, c4_y1, c4_x2, c4_y2)
+        if not is_done and not is_scada_blind and is_cabled:
+            s4_header = "FALDGRUBE TEST:" if mode == "teach" else "TEST-SCENARIE:"
+            self.create_text(c4_x1 + 12, c4_y1 + 20, anchor="nw", text=f"{s4_header}\n\n[ GLEM ALLOW FC 03 ]\nAfvis kun FC 06 uden\nat tillade FC 03 (Test SCADA)", fill="#fbbf24", font=("Segoe UI", 8, "bold"))
+            self.hotspot_rects["vfd_test_forget_fc3"] = (c4_x1, c4_y1, c4_x2, c4_y2)
+        else:
+            s4_header = "FALDGRUBE TEST:" if mode == "teach" else "TEST-SCENARIE:"
+            s4_sub = "Test hvad der sker hvis\nkablerne krydses forkert" if mode == "teach" else "Forbind VFD til WAN P5\nog switchen til LAN P1"
+            self.create_text(c4_x1 + 12, c4_y1 + 20, anchor="nw", text=f"{s4_header}\n\n[ BYT OM PÅ WAN/LAN ]\n{s4_sub}", fill="#fbbf24", font=("Segoe UI", 8, "bold"))
+            self.hotspot_rects["vfd_wrong_cable"] = (c4_x1, c4_y1, c4_x2, c4_y2)
 
         footer_y = h - 26
         self.create_rectangle(0, footer_y, w, h, fill="#081018", outline="#1c3347", width=1)
-        self.create_text(20, footer_y + 4, anchor="nw", text="▶ Klik på trinene foroven, brug tallene 1-6 i terminalen, eller klik 'Tilbage' for at vende tilbage.", fill="#f6d365", font=("Consolas", 9, "bold"))
+        self.create_text(20, footer_y + 4, anchor="nw", text="▶ Klik på trinene foroven, brug tshark/firewall CLI i terminalen, eller klik 'Tilbage' for at vende tilbage.", fill="#f6d365", font=("Consolas", 9, "bold"))
 
     def draw_switch_workbench(self, w: int, h: int) -> None:
         self.create_rectangle(0, 0, w, h, fill="#0b141e", outline="")
@@ -560,8 +589,10 @@ class GameCanvas(tk.Canvas):
             self.master_app.command("kobl kabler til scalance")
         elif name == "vfd_wrong_cable":
             self.master_app.command("byt om på lan og wan")
+        elif name == "vfd_test_forget_fc3":
+            self.master_app.command("firewall rule add --drop-fc 6")
         elif name == "vfd_dpi":
-            self.master_app.command("aktiver modbus dpi")
+            self.master_app.command("firewall rule add --allow-fc 3 --drop-fc 6")
         self.draw()
 
     def on_switch_workbench_click(self, name: str) -> None:

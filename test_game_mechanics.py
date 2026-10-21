@@ -31,7 +31,8 @@ def test_sniffer_and_wireshark():
     assert "Modbus" in modbus_pkts[0]["proto"]
 
     capture_text = sniffer.render_capture("pumpehuset", "modbus")
-    assert "LIVE CAPTURE PÅ PUMPEHUSET" in capture_text
+    assert "pumpehuset" in capture_text.lower()
+    assert "tshark" in capture_text.lower()
     assert "Modbus" in capture_text
 
     details = sniffer.render_dissection("pumpehuset", "3")
@@ -294,6 +295,66 @@ def test_teach_vs_exam_modes_and_shuffling():
     print("  -> Passed.")
 
 
+def test_tshark_and_scada_blindness_rule():
+    print("Test 11: Real tshark commands, SCADA blind failure on missing FC03, and recovery...")
+    logs = []
+    engine = GameEngine(output=logs.append)
+    engine.start("Test", "UCL")
+    engine.handle_command("gå til pumpehuset")
+
+    # Step 1: Run tshark manual
+    logs.clear()
+    engine.handle_command("man tshark")
+    assert "TSHARK OT QUICK REFERENCE" in "\n".join(logs)
+
+    # Step 2: Run tshark with display filter
+    logs.clear()
+    engine.handle_command("tshark -Y \"modbus\"")
+    combined = "\n".join(logs)
+    assert "modbus" in combined.lower()
+    assert "FC 03" in combined
+    assert "FC 06" in combined
+
+    # Step 3: Critical mistake: Forget allow FC 03 (only drop FC 06)
+    logs.clear()
+    engine.handle_command("firewall rule add --drop-fc 6")
+    assert engine.scada_blind is True
+    assert "scada-blind" in engine.flags
+    assert "chapter-1-done" not in engine.flags
+    combined_err = "\n".join(logs)
+    assert "SCADA-ALARM" in combined_err
+    assert "GLEMTE at tillade WinCC SCADA's FC 03" in combined_err
+
+    # Step 4: Verify tshark displays dropped FC 03 telemetry
+    logs.clear()
+    engine.handle_command("tshark -Y \"modbus\"")
+    tshark_output = "\n".join(logs)
+    assert "BLOKERET AF FIREWALL - INGEN ALLOW-REGEL FOR FC 03" in tshark_output
+    assert "TIMEOUT / CONNECTION RESET" in tshark_output
+
+    # Step 5: Check firewall status
+    logs.clear()
+    engine.handle_command("firewall status")
+    assert "SCADA BLIND! Mangler 'allow-fc 3'" in "\n".join(logs)
+
+    # Step 6: Fix the rule by providing both allow FC 03 and drop FC 06
+    logs.clear()
+    engine.handle_command("firewall rule add --allow-fc 3 --drop-fc 6")
+    assert engine.scada_blind is False
+    assert "scada-blind" not in engine.flags
+    assert "chapter-1-done" in engine.flags
+    assert engine.chapter == 2
+    assert "42.0 Bar" in "\n".join(logs)
+
+    # Step 7: Verify tshark now shows successful telemetry
+    logs.clear()
+    engine.handle_command("tshark -Y \"modbus\"")
+    tshark_after = "\n".join(logs)
+    assert "DPI ACCEPT: Telemetri OK" in tshark_after
+    assert "Stabil drift" in tshark_after
+    print("  -> Passed.")
+
+
 if __name__ == "__main__":
     test_purdue_and_iec()
     test_sniffer_and_wireshark()
@@ -305,4 +366,5 @@ if __name__ == "__main__":
     test_incident_reporting_and_audit()
     test_autocomplete_and_number_choices()
     test_teach_vs_exam_modes_and_shuffling()
+    test_tshark_and_scada_blindness_rule()
     print("\nALL MECHANICS TESTS PASSED SUCCESSFULLY! [OK]")

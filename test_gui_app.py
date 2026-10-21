@@ -83,26 +83,37 @@ def test_gui():
         assert app.engine.vfd_cabled is True
         assert app.engine.wrong_cabling is False
 
-        # Step 10: Activate Modbus DPI
-        print("  -> Testing activating Modbus DPI...")
+        # Step 10: Test forgetting allow FC 03 (SCADA blind error)
+        print("  -> Testing forgetting allow FC 03 on workbench...")
         wb_choices = app.engine.get_current_choices()
-        dpi_key = [k for k, _l, cmd, _c in wb_choices if cmd == "aktiver modbus dpi"][0]
+        forget_key = [k for k, _l, cmd, _c in wb_choices if "drop-fc 6" in cmd and "allow" not in cmd][0]
+        app.command(forget_key)
+        app.update()
+        assert app.engine.scada_blind is True
+
+        # Step 11: Correct with allow FC 03 and drop FC 06
+        print("  -> Testing correcting rule with allow FC 03 and drop FC 06...")
+        wb_choices = app.engine.get_current_choices()
+        dpi_key = [k for k, _l, cmd, _c in wb_choices if "allow-fc 3" in cmd or cmd == "aktiver modbus dpi"][0]
         app.command(dpi_key)
         app.update()
         assert "chapter-1-done" in app.engine.flags
+        assert app.engine.scada_blind is False
         assert app.map.view_mode == "room"
 
-        # Step 11: Test wireshark command
-        print("  -> Testing wireshark in terminal...")
-        app.command("åbn wireshark")
+        # Step 12: Test real tshark CLI commands
+        print("  -> Testing tshark CLI in terminal...")
+        app.command("tshark -Y \"modbus\"")
+        app.update()
+        app.command("man tshark")
         app.update()
 
-        # Step 12: Test empty enter reprints choices without losing options
+        # Step 13: Test empty enter reprints choices without losing options
         print("  -> Testing empty Enter reprinting choices...")
         app.command("")
         app.update()
 
-        # Step 13: Test canvas redrawing
+        # Step 14: Test canvas redrawing
         print("  -> Testing canvas drawing...")
         app.map.draw()
         app.update()
