@@ -90,6 +90,16 @@ class GameApp(tk.Tk):
             font=("Segoe UI", 8, "bold"), relief="raised", padx=6, command=self.show_guidance_window,
         ).pack(side="right", padx=3)
 
+        tk.Button(
+            zone_bar, text="📋 Tilsynet", bg="#4c1d95", fg="#e9d5ff",
+            font=("Segoe UI", 8, "bold"), relief="groove", padx=6, command=lambda: self.command("ring til kirsten"),
+        ).pack(side="right", padx=3)
+
+        tk.Button(
+            zone_bar, text="☕ Hans", bg="#1e293b", fg="#fde047",
+            font=("Segoe UI", 8, "bold"), relief="groove", padx=6, command=lambda: self.command("tal med hans"),
+        ).pack(side="right", padx=3)
+
         self.support_btn = tk.Button(
             zone_bar, text="📞 Support (3/3)", bg="#162b3d", fg="#dceaf4",
             font=("Segoe UI", 8, "bold"), relief="groove", padx=6, command=lambda: self.command("techsupport"),

@@ -6,6 +6,118 @@ from typing import Any
 
 
 class KirstenDialogue:
+    """Manages Auditor Kirsten's rigorous regulatory oversight, interim audits, and legal pressure."""
+
+    def __init__(self) -> None:
+        self.contact_count = 0
+
+    def get_interim_audit(self, engine: Any) -> str:
+        """Provide a demanding midterm compliance assessment during the working week."""
+        self.contact_count += 1
+        day = getattr(engine, "simulated_day", 1)
+        hour = getattr(engine, "simulated_hour", 1)
+        incident = getattr(engine, "incident", None)
+        forensics = getattr(engine, "forensics", None)
+        metrics = getattr(engine, "metrics", None)
+        early_warning = incident.early_warning_sent if incident else False
+
+        lines = [
+            f"\n📞 [OPKALD TIL MILJØ- OG CYBERSIKKERHEDSTILSYNET - REVISOR KIRSTEN]:",
+            f"Kirsten svarer efter præcis to ringetoner med en tør, formel stemme:",
+            f"\"Goddag. Tilsynet her. Du taler med ledende auditor Kirsten.\"",
+            f"\"I befinder jer på Dag {day}, time {hour} af jeres varslede ugeperiode.\"",
+            "",
+            "📋 TILSYSNETS FORELØBIGE RISIKOVURDERING:",
+        ]
+
+        # 1. Early Warning check
+        if early_warning:
+            lines.append("  • [NIS2 ARTIKEL 23]: ✅ Lovpligtig 24-timers Early Warning er registreret i CSIRT-databasen.")
+        else:
+            lines.append(
+                "  • [NIS2 ARTIKEL 23]: 🚨 ADVARSEL! Ingen 'Tidlig Advarsel' modtaget endnu! "
+                "Hvis en væsentlig hændelse ikke anmeldes inden 24 timer fra detektering, udløser det automatisk anmærkning og bødeforlæg!"
+            )
+
+        # 2. Forensic handling check
+        pi_state = forensics.pi_handling_state if forensics else "unhandled"
+        if pi_state == "secured":
+            lines.append("  • [ARTIKEL 21.2.b]: ✅ Sikring af beslaglagt hardware i Faraday-pose og SHA-256 integritet godkendt.")
+        elif pi_state == "trashed":
+            lines.append("  • [ARTIKEL 21.2.b]: ❌ KRITISK OVERTRÆDELSE! Destruktion af hardware-bevis i skraldespand er strafbart tab af bevis.")
+        elif pi_state in {"reused", "infected"}:
+            lines.append("  • [ARTIKEL 21.2.b]: ❌ KRITISK OVERTRÆDELSE! Kompromitteret udstyr er genbrugt eller tilsluttet privat udstyr.")
+        else:
+            lines.append("  • [ARTIKEL 21.2.b]: ⚠️ Eventuelt mistænkeligt hardware skal sikres forensisk og forsegles ubrudt.")
+
+        # 3. Compliance metric
+        if metrics:
+            comp = metrics.compliance
+            if comp >= 75:
+                lines.append(f"  • Samlet efterlevelsesgrad: [{comp}%] - Tilfredsstillende fremdrift mod certificering.")
+            elif comp >= 50:
+                lines.append(f"  • Samlet efterlevelsesgrad: [{comp}%] - Utilstrækkelig dokumentation. I risikerer påbud ved ugeslut.")
+            else:
+                lines.append(f"  • Samlet efterlevelsesgrad: [{comp}%] - KRITISK LAV. Driftstilladelsen vil blive inddraget på fredag.")
+
+        lines.extend([
+            "",
+            "Kirsten afslutter skarpt:",
+            "\"I procesanlæg er gode intentioner ligegyldige. Vi kigger udelukkende på verificerbar dokumentation,",
+            "forensisk beviskæde og overholdelse af tidsfrister. Vi ses til den afsluttende revision på Dag 5!\"",
+        ])
+        return "\n".join(lines)
+
+    def interrogate(self, engine: Any, topic: str) -> str:
+        """Answer specific regulatory inquiries regarding NIS2, sanctions, and evidence requirements."""
+        norm = topic.lower().strip()
+
+        if any(k in norm for k in {"artikel 23", "early warning", "advarsel", "frist", "24 timer"}):
+            return (
+                "Kirsten belærer dig formelt:\n"
+                "\"NIS2 Artikel 23.2 fastsætter en ufravigelig frist: En 'tidlig advarsel' skal indgives til CSIRT / Tilsynet\n"
+                "uden unødig forsinkelse og under alle omstændigheder inden for 24 timer efter, at den væsentlige hændelse blev opdaget.\n"
+                "Advarslen skal angive, om hændelsen formodes at skyldes ulovlige eller ondsindede handlinger,\n"
+                "eller om den kan have grænseoverskridende virkninger. Brug kommandoen 'indberet hændelse' før fristen udløber!\""
+            )
+
+        if any(k in norm for k in {"artikel 21", "foranstaltninger", "krav", "standard", "iec 62443"}):
+            return (
+                "Kirsten bladrer i EU-direktivet:\n"
+                "\"NIS2 Artikel 21 pålægger ledelsen at gennemføre passende og forholdsmæssige tekniske foranstaltninger:\n"
+                "  1. Risikovurderinger og sikkerhedspolitikker for informationssystemer.\n"
+                "  2. Hændelseshåndtering (forebyggelse, opdagelse og reaktion jf. NIST SP 800-61).\n"
+                "  3. Driftskontinuitet (backup og nødstrømsplaner jf. Artikel 21.2.c).\n"
+                "  4. Forsyningskædesikkerhed (leverandørkontrol af f.eks. eksterne pumpe-teknikere).\n"
+                "  5. Netværkssikkerhed og kryptering (IEC 62443 zoner og conduits samt Basic256Sha256 i OPC UA).\n"
+                "Hvis ét af disse punkter fejler under auditten, falder det samlede regnskab til jorden!\""
+            )
+
+        if any(k in norm for k in {"bevis", "forensik", "faraday", "chain of custody", "sha-256", "hash"}):
+            return (
+                "Kirsten ser strengt på dig:\n"
+                "\"I henhold til strafferetsplejen og NIS2 Artikel 21.2.b er digital evidens ekstremt flygtig.\n"
+                "Hvis I beslaglægger en rogue enhed – som f.eks. en Raspberry Pi i en kabelbakke – skal den straks\n"
+                "placeres i en antistatisk Faraday-pose for at afskære trådløse radiosignaler (Bluetooth/Wi-Fi).\n"
+                "Der skal straks udregnes en kryptografisk SHA-256 hash af hukommelsen, og posen skal forsegles med plomberingsnummer.\n"
+                "Smid aldrig hardware i skraldespanden eller sæt SD-kortet i jeres private laptop! Gør I det, er beviset kontamineret!\""
+            )
+
+        if any(k in norm for k in {"bøde", "straf", "sanktion", "ledelse", "ansvar"}):
+            return (
+                "Kirsten hæver stemmen:\n"
+                "\"Under NIS2 er ledelsesansvaret personligt (Artikel 20).\n"
+                "Bøderne for væsentlige enheder kan andrage op til 10 millioner euro eller 2% af den samlede globale omsætning.\n"
+                "Dertil kommer, at Tilsynet kan nedlægge midlertidigt forbud mod, at ledende medarbejdere udøver ledelsesfunktioner.\n"
+                "Det er derfor, direktør Jens Majer sveder tran! Gør jeres arbejde ordentligt!\""
+            )
+
+        return (
+            f"Kirsten noterer dit spørgsmål om '{topic}' i sin journal:\n"
+            "\"Tilsynet yder ikke rådgivning om driftstekniske detaljer. Vi måler jer udelukkende på compliance.\n"
+            "Overhold tidsfristerne, luk bagdørene, og fremlæg dokumentationen på fredag!\""
+        )
+
     def get_audit_intro(self, player_name: str) -> str:
         return (
             f"Kirsten tager sine læsebriller på og slår op i sit clipboard:\n"

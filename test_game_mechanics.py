@@ -174,7 +174,7 @@ def test_kontrolrum_opcua_and_4g():
 
 
 def test_dialogues_and_anecdotes():
-    print("Test 7: Hans McDonald situational memory & anecdotes...")
+    print("Test 7: Hans McDonald situational memory, interrogation & Kirsten interim audit (Etape 3)...")
     logs = []
     engine = GameEngine(output=logs.append)
     engine.start("Alice", "Automation")
@@ -182,7 +182,7 @@ def test_dialogues_and_anecdotes():
 
     # Normal state
     g1 = hans.get_greeting(engine)
-    assert "velkommen" in g1.lower()
+    assert "pumpe 2 opfører sig" in g1.lower() or "velkommen" in g1.lower()
 
     # Breaker tripped
     engine.breaker_tripped = True
@@ -195,9 +195,46 @@ def test_dialogues_and_anecdotes():
     g3 = hans.get_greeting(engine)
     assert "defective stop" in g3.lower()
 
-    # Story / topic advice
-    advice = hans.get_topic_response("råd")
-    assert "Faraday" in advice
+    # Story / anecdote
+    anecdote = hans.get_anecdote()
+    assert len(anecdote) > 20
+
+    # Interrogation of Hans via terminal command
+    logs.clear()
+    engine.handle_command("spørg hans om morten")
+    m_resp = "\n".join(logs)
+    assert "Hydropump Nordic" in m_resp
+    assert engine.investigation.get_clue("spor_morten_rapport").discovered is True
+
+    logs.clear()
+    engine.handle_command("spørg hans om lars")
+    l_resp = "\n".join(logs)
+    assert "Lars Kofoed" in l_resp
+
+    logs.clear()
+    engine.handle_command("spørg hans om kim")
+    k_resp = "\n".join(logs)
+    assert "Kim på natholdet" in k_resp
+
+    logs.clear()
+    engine.handle_command("spørg hans om modbus")
+    assert "Function Code 03" in "\n".join(logs)
+
+    # Kirsten interim audit via phone
+    logs.clear()
+    engine.handle_command("ring til kirsten")
+    interim = "\n".join(logs)
+    assert "REVISOR KIRSTEN" in interim
+    assert "NIS2 ARTIKEL 23" in interim
+
+    logs.clear()
+    engine.handle_command("spørg kirsten om artikel 23")
+    assert "24 timer" in "\n".join(logs)
+
+    logs.clear()
+    engine.handle_command("spørg kirsten om bøder")
+    assert "10 millioner euro" in "\n".join(logs)
+
     print("  -> Passed.")
 
 

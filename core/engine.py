@@ -474,6 +474,14 @@ class GameEngine:
                 self.record_clue("spor_mac_oui")
             self.emit(f"💡 [TSHARK INFO]: Kører tshark på '{self.room}_vlan'... (Skriv 'man tshark' for filtre som f.eks. -Y \"modbus\")")
             self.emit(self.sniffer.execute_tshark_command("tshark", self.room, engine=self))
+        elif normalized.startswith("spørg hans om ") or normalized.startswith("afhør hans om ") or normalized.startswith("spoerg hans om "):
+            topic = normalized.replace("spørg hans om ", "").replace("afhør hans om ", "").replace("spoerg hans om ", "").strip()
+            self.emit(self.hans.interrogate(self, topic))
+        elif normalized.startswith("spørg kirsten om ") or normalized.startswith("afhør kirsten om ") or normalized.startswith("spoerg kirsten om "):
+            topic = normalized.replace("spørg kirsten om ", "").replace("afhør kirsten om ", "").replace("spoerg kirsten om ", "").strip()
+            self.emit(self.kirsten.interrogate(self, topic))
+        elif normalized in {"ring til kirsten", "ring kirsten", "kontakt tilsynet", "interim audit", "ring tilsynet"}:
+            self.emit(self.kirsten.get_interim_audit(self))
         elif normalized.startswith("gå til ") or normalized.startswith("gaa til "):
             dest = normalized.replace("gå til ", "").replace("gaa til ", "")
             self.go_to(dest)
@@ -1099,12 +1107,12 @@ class GameEngine:
             self.emit(f"\n{greeting}")
             if random.random() < 0.4:
                 self.emit(f"\n{self.hans.get_anecdote()}")
-        elif "kirsten" in norm or "revisor" in norm:
+        elif "kirsten" in norm or "revisor" in norm or "tilsyn" in norm:
             self.record_clue("spor_kim_nattevagt")
             if self.chapter == 5:
                 self.complete_audit()
             else:
-                self.emit("Kirsten fra Tilsynet er endnu ikke ankommet. Hun forventes først til den afsluttende revision.")
+                self.emit(self.kirsten.get_interim_audit(self))
         else:
             self.emit(f"Der er ingen ved navn '{character}' her.")
 
@@ -1164,6 +1172,9 @@ class GameEngine:
         self.emit("  GÅ TIL <zone>             Skift rum (indgangen, pumpehuset, ventil-øen, el-tavlen, kontrolrummet)")
         self.emit("  UNDERSØG <komponent>      Inspicér maskine, kabelbakke eller enhed")
         self.emit("  TAL MED HANS              Få praktisk vejledning og erfaringer fra driftsteknikeren")
+        self.emit("  SPØRG HANS OM <emne>      Forhør Hans om mistænkte (morten, lars, kim, 4g, stuxnet, modbus)")
+        self.emit("  RING TIL KIRSTEN          Få Tilsynets foreløbige NIS2 risikovurdering undervejs i ugen")
+        self.emit("  SPØRG KIRSTEN OM <emne>   Spørg Tilsynet om lovkrav (artikel 21, artikel 23, beviser, bøder)")
         self.emit("  SAGSTAVLE                 Vis efterforskningstavle, mistænkte og de 4 anlægsmetrikker")
         self.emit("  SPOR                      Vis opdagede tekniske og fysiske spor")
         self.emit("  ANALYSER SPOR <id>        Udfør retsmedicinsk/teknisk dybdeanalyse af et fundet spor")
