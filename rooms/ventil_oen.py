@@ -68,7 +68,6 @@ class VentilOenRoom(BaseRoom):
     def get_choices(self, engine: Any) -> list[tuple[str, str, str, str]]:
         flags = getattr(engine, "flags", set())
         ch = getattr(engine, "chapter", 1)
-        mode = getattr(engine, "game_mode", "teach")
         choices: list[tuple[str, str, str, str]] = []
 
         is_revealed = "pi-revealed" in flags
@@ -76,60 +75,30 @@ class VentilOenRoom(BaseRoom):
 
         if ch == 2:
             if not is_revealed:
-                if mode == "exam":
-                    choices.append(("1", "Inspicér Festo ventil-øen og ET 200SP decentrale I/O moduler", "undersøg ventiler", "normal"))
-                    choices.append(("2", "Åbn Wireshark og overvåg Layer 2 PROFINET DCP-broadcasts", "åbn wireshark", "normal"))
-                    choices.append(("3", "Undersøg kabelbakke K-04 bag ventilstativerne for uautoriseret kabling", "undersøg kabelbakke", "primary"))
-                    choices.append(("4", "Spørg driftstekniker Hans om tidligere netværksændringer", "spørg hans om lars", "normal"))
-                    choices.append(("5", "Åbn efterforskningens sagstavle og opdater hypoteser", "sagstavle", "normal"))
-                    choices.append(("6", "Afbryd den eksisterende D-Link switch ved at trække alle patchkabler ud", "pille switch fra", "danger"))
-                else:
-                    choices.append(("1", "👁️ Trin 1 (Observation): Undersøg Festo ventil-øen og ET 200SP I/O", "undersøg ventiler", "normal"))
-                    choices.append(("2", "📊 Trin 2 (Dataindsamling): Wireshark / tshark (Analyser Layer 2 DCP-storm)", "åbn wireshark", "normal"))
-                    choices.append(("3", "🔍 Trin 3 (Fysisk efterforskning): Undersøg kabelbakke K-04 bag ventilstativerne", "undersøg kabelbakke", "primary"))
-                    choices.append(("4", "☕ Trin 4 (Afhøring): Spørg Hans om tidligere teknikere og kabling ('spørg hans om lars')", "spørg hans om lars", "normal"))
-                    choices.append(("5", "🕵️ Trin 5 (Sagstavle): Gennemse spor og mistænkte ('sagstavle')", "sagstavle", "normal"))
-                    choices.append(("6", "⚠️ Faldgrube: Pille switch fra (Træk kabler ud -> Risiko: Kavitation)", "pille switch fra", "danger"))
+                choices.append(("1", "🔍 Inspicér Festo ventil-øen og ET 200SP decentrale I/O moduler", "undersøg ventiler", "normal"))
+                choices.append(("2", "📊 Kør tshark og overvåg Layer 2 PROFINET DCP-broadcasts", "åbn wireshark", "normal"))
+                choices.append(("3", "🔦 Undersøg kabelbakke K-04 bag ventilstativerne for skjult kabling", "undersøg kabelbakke", "primary"))
+                choices.append(("4", "☕ Spørg Hans om tidligere netværksændringer på ventil-øen", "spørg hans om lars", "normal"))
+                choices.append(("5", "🔌 Afbryd D-Link switchen ved at trække alle patchkabler ud med det samme", "pille switch fra", "normal"))
                 return choices
 
             if not pi_removed:
-                if mode == "exam":
-                    choices.append(("1", "Inspicér DCP Identify pakker fra kilde-MAC b8:27:eb:d4:11:22", "åbn wireshark", "normal"))
-                    choices.append(("2", "Spørg driftstekniker Hans om hvem der installerede Raspberry Pi udstyr", "spørg hans om lars", "normal"))
-                    choices.append(("3", "Frakobl enheden, forsegl i antistatisk Faraday-pose og registrer i hændelsesloggen", "sikr pi i faraday-pose", "success"))
-                    choices.append(("4", "Frakobl enheden og kasser den som defekt elektronikaffald i værkstedets skraldespand", "smid pi i skraldespand", "warning"))
-                    choices.append(("5", "Frakobl enheden og gem den til genanvendelse i et lokalt testmiljø", "gem pi til genbrug", "danger"))
-                    choices.append(("6", "Tag MicroSD-kortet ud og tilslut direkte til din felt-laptop for filanalyse", "indsæt sd-kort i bærbar", "danger"))
-                    choices.append(("7", "Frakobl netværkskablerne fra D-Link switchen uden at fjerne den tilkoblede hardware", "pille switch fra", "danger"))
-                else:
-                    choices.append(("1", "📊 Dataindsamling: Inspicér de falske DCP-pakker fra MAC b8:27:eb:d4:11:22", "åbn wireshark", "normal"))
-                    choices.append(("2", "☕ Afhøring: Spørg Hans om hvem der brugte Raspberry Pi i driften ('spørg hans om lars')", "spørg hans om lars", "normal"))
-                    choices.append(("3", "🛡️ Forensisk sikring (Guldstandard): Kobl Pi fra & forsegl i antistatisk Faraday-pose (NIS2)", "sikr pi i faraday-pose", "success"))
-                    choices.append(("4", "🗑️ Faldgrube 1: Frakobl Pi og smid ud i værkstedets skraldespand (Tab af bevis)", "smid pi i skraldespand", "warning"))
-                    choices.append(("5", "🏠 Faldgrube 2: Tag Pi med hjem i lommen til privat genbrug (Fælde)", "gem pi til genbrug", "danger"))
-                    choices.append(("6", "💻 Faldgrube 3: Tag MicroSD-kortet ud og sæt i din egen bærbare (Fælde)", "indsæt sd-kort i bærbar", "danger"))
-                    choices.append(("7", "⚠️ Faldgrube 4: Pille switch fra uden at fjerne Pi (Risiko: Kavitation)", "pille switch fra", "danger"))
+                choices.append(("1", "📊 Inspicér DCP-pakkerne fra kilde-MAC b8:27:eb:d4:11:22 i tshark", "åbn wireshark", "normal"))
+                choices.append(("2", "☕ Spørg Hans om hvem der har brugt Raspberry Pi udstyr i driften", "spørg hans om lars", "normal"))
+                choices.append(("3", "🛡️ Frakobl enheden, forsegl den i antistatisk Faraday-pose og log SHA-256", "sikr pi i faraday-pose", "normal"))
+                choices.append(("4", "🗑️ Frakobl enheden og smid den ud i værkstedets elektronik-skraldespand", "smid pi i skraldespand", "normal"))
+                choices.append(("5", "📦 Frakobl enheden og gem den på hylden til genbrug i et lokalt testmiljø", "gem pi til genbrug", "normal"))
+                choices.append(("6", "💻 Tag MicroSD-kortet ud og sæt det direkte i din egen bærbare PC for filanalyse", "indsæt sd-kort i bærbar", "normal"))
                 return choices
 
             # Pi removed, now fix the switch
-            if mode == "exam":
-                choices.append(("1", "Monter SCALANCE XB-200 managed switch og etabler redundant PROFINET MRP-ring", "udskift switch med scalance", "success"))
-                choices.append(("2", "Åbn montage-arbejdsbænken for SCALANCE XB-200 og MRP-konfiguration", "switch workbench", "normal"))
-                choices.append(("3", "Verificer netværkets determinisme med Wireshark", "åbn wireshark", "normal"))
-                choices.append(("4", "Åbn efterforskningens sagstavle og opdater hypoteser", "sagstavle", "normal"))
-                choices.append(("5", "Gå til Hoved-el-tavlen", "gå til el-tavlen", "normal"))
-            else:
-                choices.append(("1", "🔄 Modtræk (Guldstandard): Monter SCALANCE XB-200 & forbind PROFINET MRP-ring", "udskift switch med scalance", "success"))
-                choices.append(("2", "🛠️ Montage: Åbn Switch Montage-arbejdsbænk for manuel montage", "switch workbench", "normal"))
-                choices.append(("3", "📊 Verifikation: Wireshark - Verificer om DCP-stormen er stoppet", "åbn wireshark", "normal"))
-                choices.append(("4", "🕵️ Sagstavle: Gennemse opdateret sagstavle ('sagstavle')", "sagstavle", "normal"))
-                choices.append(("5", "⚡ Navigation: Gå til Hoved-el-tavlen", "gå til el-tavlen", "normal"))
+            choices.append(("1", "🔄 Monter SCALANCE XB-200 managed switch og etabler redundant PROFINET MRP-ring", "udskift switch med scalance", "primary"))
+            choices.append(("2", "📊 Verificer med tshark om DCP-broadcast-stormen er ophørt", "åbn wireshark", "normal"))
+            choices.append(("3", "🕵️ Åbn Sagstavlen og analyser de nye spor", "sagstavle", "normal"))
             return choices
 
         # Later chapters
         choices.append(("1", "🔍 Undersøg Festo ventil-øen (deterministisk PROFINET RT)", "undersøg ventiler", "normal"))
-        choices.append(("2", "📊 Wireshark: Inspicér PROFINET RT rammer", "åbn wireshark", "normal"))
-        choices.append(("3", "⚡ Gå til Hoved-el-tavlen", "gå til el-tavlen", "normal"))
-        choices.append(("4", "🖥️ Gå til Kontrolrummet", "gå til kontrolrummet", "normal"))
-        choices.append(("5", "🚰 Gå til Pumpehuset", "gå til pumpehuset", "normal"))
+        choices.append(("2", "📊 Kør tshark og inspicér PROFINET RT rammer", "åbn wireshark", "normal"))
+        choices.append(("3", "⚡ Gå til Hoved-el-tavlen", "gå til el-tavlen", "primary"))
         return choices

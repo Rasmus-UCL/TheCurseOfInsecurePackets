@@ -25,9 +25,13 @@ class TerminalWidget(tk.Frame):
         self.history: list[str] = []
         self.history_index: int = -1
 
+        # Integrated Command Prompt Line (Packed FIRST with side='bottom' so it is NEVER pushed out of view)
+        self.prompt_bar = tk.Frame(self, bg="#0b1710", padx=8, pady=4, relief="groove", bd=1)
+        self.prompt_bar.pack(side="bottom", fill="x", padx=6, pady=(2, 6))
+
         # Output Text Area
         self.output_frame = tk.Frame(self, bg="#050a08")
-        self.output_frame.pack(fill="both", expand=True, padx=6, pady=(6, 2))
+        self.output_frame.pack(side="top", fill="both", expand=True, padx=6, pady=(6, 2))
 
         self.scroll = tk.Scrollbar(self.output_frame, bg="#0d1f14", troughcolor="#050a08", relief="flat")
         self.scroll.pack(side="right", fill="y")
@@ -41,6 +45,7 @@ class TerminalWidget(tk.Frame):
             wrap="word",
             padx=10,
             pady=6,
+            height=8,
             state="disabled",
             bd=0,
             highlightthickness=0,
@@ -59,10 +64,6 @@ class TerminalWidget(tk.Frame):
         self.text.tag_configure("purple", foreground="#c084fc")
         self.text.tag_configure("menu_hdr", foreground="#fde047", font=("Consolas", 10, "bold"))
         self.text.tag_configure("choice", foreground="#86efac", font=("Consolas", 10))
-
-        # Integrated Command Prompt Line (Directly at the bottom of the terminal)
-        self.prompt_bar = tk.Frame(self, bg="#0b1710", padx=8, pady=4, relief="groove", bd=1)
-        self.prompt_bar.pack(fill="x", padx=6, pady=(0, 6))
 
         self.prompt_label = tk.Label(
             self.prompt_bar,
@@ -116,6 +117,10 @@ class TerminalWidget(tk.Frame):
         self.text.configure(state="normal")
         self.text.delete("1.0", "end")
         self.text.configure(state="disabled")
+
+    def scroll_to_top(self) -> None:
+        """Scroll terminal output to the top so the user can read from the beginning."""
+        self.text.yview_moveto(0.0)
 
     def write_line(self, message: str, tag: str | None = None) -> None:
         self.text.configure(state="normal")

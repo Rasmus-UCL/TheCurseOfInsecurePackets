@@ -19,16 +19,20 @@ class GameApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("The Curse of Insecure Packets - OT Cybersikkerhed Cockpit (NIS2 / IEC 62443)")
-        self.geometry("1160x860")
-        self.minsize(1000, 740)
+        self.geometry("1180x840")
+        self.minsize(1180, 840)
+        self.maxsize(1180, 840)
+        self.resizable(False, False)
         self.configure(bg="#081018")
 
         self.intro_step = 0
         self.intro_answers: list[str] = []
         self.save_files_meta: list[dict[str, Any]] = []
+        self.action_buttons: list[tk.Button] = []
 
         # Setup Game Engine with terminal callback
         self.engine = GameEngine(output=self.write_to_terminal)
+        self.engine.auto_print_choices = False
 
         # Build UI Containers: Main Menu & Active Gameplay
         self.setup_ui()
@@ -187,11 +191,33 @@ class GameApp(tk.Tk):
         )
         self.sagstavle_btn.pack(side="right", padx=4)
 
-        # 4. Dedicated 2D Visual Plant Floor Screen (Height = 330 px)
-        self.map = GameCanvas(self.gameplay_container, self.engine, on_hotspot_click=self.on_canvas_click, height=330)
+        # 4. Dedicated 2D Visual Plant Floor Screen (Static Height = 310 px in all modes)
+        self.map = GameCanvas(
+            self.gameplay_container,
+            self.engine,
+            on_hotspot_click=self.on_canvas_click,
+            app=self,
+            height=310,
+        )
         self.map.pack(fill="x", expand=False, padx=12, pady=(4, 2))
 
-        # 5. Integrated Green-on-Black CRT Terminal (Takes full remaining space)
+        # 4.5. Dedicated Interactive Action Panel (Clickable Choice Buttons so terminal isn't flooded)
+        self.action_panel = tk.Frame(self.gameplay_container, bg="#0b1520", padx=10, pady=5, relief="groove", bd=1)
+        self.action_panel.pack(fill="x", expand=False, padx=12, pady=(2, 2))
+
+        self.action_header_label = tk.Label(
+            self.action_panel,
+            text="⚡ HANDLINGER I ZONEN (Klik på en knap herunder, klik på 2D-kortet foroven, eller skriv i terminalen):",
+            bg="#0b1520", fg="#f6d365", font=("Segoe UI", 8, "bold"), anchor="w",
+        )
+        self.action_header_label.pack(fill="x", pady=(0, 3))
+
+        self.action_grid = tk.Frame(self.action_panel, bg="#0b1520")
+        self.action_grid.pack(fill="x")
+        self.action_grid.columnconfigure(0, weight=1, uniform="act_col")
+        self.action_grid.columnconfigure(1, weight=1, uniform="act_col")
+
+        # 5. Integrated Green-on-Black CRT Terminal (Takes remaining space; prompt pinned at bottom)
         self.terminal = TerminalWidget(self.gameplay_container, on_command=self.command)
         self.terminal.pack(fill="both", expand=True, padx=12, pady=(2, 6))
 
@@ -345,9 +371,9 @@ class GameApp(tk.Tk):
 
         tk.Label(
             teach_frame,
-            text="• Svarmuligheder har tydelige 'Guldstandard' og 'Faldgrube'-markeringer.\n"
-                 "• Omfattende pædagogisk feedback forklarer tekniske og lovmæssige konsekvenser.\n"
-                 "• Hans McDonald og Kirsten vejleder undervejs med faglige forklaringer.\n"
+            text="• Ingen spoilers i svarmulighederne — alle valg fremstår som realistiske handlinger.\n"
+                 "• Hvis du vælger en farlig procedure, griber Hans McDonald ind og stopper dig.\n"
+                 "• Hans forklarer hvorfor det er forkert og henviser til rette procedure jf. NIS2 & IEC 62443.\n"
                  "• Ideel til studerende på UCL, workshops og øvelsestimer.",
             bg="#0a1a14", fg="#a7f3d0", font=("Segoe UI", 8),
             justify="left", padx=8, pady=4,
@@ -368,9 +394,9 @@ class GameApp(tk.Tk):
 
         tk.Label(
             exam_frame,
-            text="• INGEN faldgrube-advarsler eller svarmarkeringer.\n"
+            text="• Hans stopper dig IKKE ved fejlvalg — han kommer kun med en tør bemærkning bagefter.\n"
+                 "• Forkerte valg udføres og udløser realistiske driftskonsekvenser og NIS2-bøder.\n"
                  "• Svarmulighederne blandes i tilfældig rækkefølge ved hvert træk.\n"
-                 "• Skarp evaluering af driftsnedbrud, NIS2-bøder og ledelsestillid.\n"
                  "• Ideel til eksamensprojekter, certificeringer og selvtest.",
             bg="#1a140a", fg="#fde68a", font=("Segoe UI", 8),
             justify="left", padx=8, pady=4,
@@ -642,17 +668,20 @@ class GameApp(tk.Tk):
         use_tutorial = self.tutorial_var.get() if tutorial is None else tutorial
 
         self.engine = GameEngine(output=self.write_to_terminal)
+        self.engine.auto_print_choices = False
         self.map.engine = self.engine
         self.engine.game_mode = mode
 
         self.show_gameplay()
         self.terminal.clear()
         self.engine.start(name, edu, tutorial=use_tutorial)
+        self.terminal.scroll_to_top()
 
         self.update_objective()
         self.update_nav_highlight()
         self.update_mode_button()
         self.update_metrics_display()
+        self.update_action_buttons()
         self.map.draw()
 
     def quick_save(self) -> None:
@@ -721,6 +750,7 @@ class GameApp(tk.Tk):
     def load_game_file(self, filepath: str) -> bool:
         """Load state from a specific JSON file and enter live gameplay."""
         self.engine = GameEngine(output=self.write_to_terminal)
+        self.engine.auto_print_choices = False
         self.map.engine = self.engine
         ok, msg = self.engine.load_state(filepath)
         if ok:
@@ -728,10 +758,12 @@ class GameApp(tk.Tk):
             self.terminal.clear()
             self.write_to_terminal(msg)
             self.engine.describe_room()
+            self.terminal.scroll_to_top()
             self.update_objective()
             self.update_nav_highlight()
             self.update_mode_button()
             self.update_metrics_display()
+            self.update_action_buttons()
             self.map.draw()
             return True
         else:
@@ -785,8 +817,13 @@ class GameApp(tk.Tk):
             self.show_guidance_window()
             return
 
+        # Clear terminal before executing the new action so the user never faces a scrolling wall of text
+        self.terminal.clear()
+        self.terminal.write_line(f"▶ {normalized}", "green_bright")
+
         # Execute on engine
         self.engine.handle_command(normalized)
+        self.terminal.scroll_to_top()
 
         # Check for menu return signal
         if "return-to-menu" in self.engine.flags:
@@ -794,40 +831,35 @@ class GameApp(tk.Tk):
             self.after(500, self.show_main_menu)
             return
 
-        # Synchronize view mode with active workbench or clue board
+        # Synchronize view mode with active workbench or clue board (Keep static 310px height!)
         if normalized.lower() in {"sagstavle", "tavle", "board", "case board", "clueboard", "investigation", "efterforskning"}:
             self.map.view_mode = "clue_board"
-            self.map.configure(height=480)
             self.sagstavle_btn.configure(text="🚪 Luk Sagstavle", relief="sunken")
         elif self.engine.active_workbench:
             self.map.view_mode = self.engine.active_workbench
-            self.map.configure(height=330)
         elif normalized.lower() in {"vis rum", "luk workbench", "tilbage", "rum", "forlad workbench", "luk sagstavle"}:
             self.map.view_mode = "room"
-            self.map.configure(height=330)
             self.sagstavle_btn.configure(relief="raised", text=f"🕵️ Sagstavle ({len(self.engine.investigation.get_discovered_clues())} spor)")
         elif "chapter-1-done" in self.engine.flags and self.map.view_mode == "vfd_workbench":
             self.map.view_mode = "room"
-            self.map.configure(height=330)
         elif "chapter-2-done" in self.engine.flags and self.map.view_mode == "switch_workbench":
             self.map.view_mode = "room"
-            self.map.configure(height=330)
 
         self.terminal.set_prompt_prefix(self.engine.room)
         self.update_mode_button()
         self.update_nav_highlight()
         self.update_objective()
         self.update_metrics_display()
+        self.update_action_buttons()
         self.map.draw()
 
     def toggle_sagstavle(self) -> None:
         if self.map.view_mode == "clue_board":
             self.map.view_mode = "room"
-            self.map.configure(height=330)
             self.sagstavle_btn.configure(relief="raised", text=f"🕵️ Sagstavle ({len(self.engine.investigation.get_discovered_clues())} spor)")
+            self.update_action_buttons()
         else:
             self.map.view_mode = "clue_board"
-            self.map.configure(height=480)
             self.sagstavle_btn.configure(text="🚪 Luk Sagstavle", relief="sunken")
             self.command("sagstavle")
         self.update_metrics_display()
@@ -864,6 +896,7 @@ class GameApp(tk.Tk):
     def toggle_mode(self) -> None:
         self.engine.toggle_game_mode()
         self.update_mode_button()
+        self.update_action_buttons()
         self.terminal.set_prompt_prefix(self.engine.room)
         self.map.draw()
 
@@ -886,7 +919,6 @@ class GameApp(tk.Tk):
     def navigate_to(self, room_key: str) -> None:
         if self.map.view_mode != "room":
             self.map.view_mode = "room"
-            self.map.configure(height=330)
             self.sagstavle_btn.configure(relief="raised", text=f"🕵️ Sagstavle ({len(self.engine.investigation.get_discovered_clues())} spor)")
         self.command(f"gå til {room_key}")
 
@@ -896,12 +928,78 @@ class GameApp(tk.Tk):
             return
         self.command(f"undersøg {hotspot_name}")
 
+    def update_action_buttons(self) -> None:
+        """Render the current room/state choices as clickable buttons in the Action Panel."""
+        for b in self.action_buttons:
+            b.destroy()
+        self.action_buttons.clear()
+
+        if not self.engine.running:
+            btn = tk.Button(
+                self.action_grid,
+                text="🏠 Vend tilbage til Hovedmenuen",
+                bg="#0284c7", fg="white", activebackground="#0369a1",
+                font=("Segoe UI", 9, "bold"), anchor="w", padx=10, pady=3,
+                command=self.show_main_menu,
+            )
+            btn.grid(row=0, column=0, columnspan=2, sticky="ew", padx=3, pady=2)
+            self.action_buttons.append(btn)
+            return
+
+        choices = self.engine.get_current_choices()
+        mode_str = "🎓 TEACH MODE (Hans vejleder ved fejl)" if self.engine.game_mode == "teach" else "📝 EKSAMENS-MODE (Ingen hjælp fra Hans)"
+        self.action_header_label.configure(
+            text=f"⚡ HANDLINGER I ZONEN [{mode_str}] — Klik på en knap herunder eller skriv i terminalen:"
+        )
+
+        for idx, (key, label, cmd, _cat) in enumerate(choices[:8]):
+            row = idx // 2
+            col = idx % 2
+            is_nav = cmd.startswith("gå til ") or cmd in {"vis rum", "luk workbench", "spring tutorial over", "sagstavle"}
+            btn_bg = "#1e293b" if is_nav else "#132a3e"
+            btn_fg = "#bae6fd" if is_nav else "#f8fafc"
+            display_lbl = f"[{key}] {label}" if len(label) <= 64 else f"[{key}] {label[:61]}..."
+            btn = tk.Button(
+                self.action_grid,
+                text=display_lbl,
+                bg=btn_bg, fg=btn_fg,
+                activebackground="#0284c7", activeforeground="white",
+                font=("Segoe UI", 8, "bold" if not is_nav else "normal"),
+                relief="raised", anchor="w", padx=8, pady=2,
+                command=lambda k=key: self.command(k),
+            )
+            btn.grid(row=row, column=col, sticky="ew", padx=3, pady=2)
+            self.action_buttons.append(btn)
+
     def update_nav_highlight(self) -> None:
+        base_labels = {
+            "indgangen": "🚪 Indgangen (L4)",
+            "pumpehuset": "🚰 Pumpehuset (L1)",
+            "ventil-oen": "💨 Ventil-øen (L1)",
+            "el-tavlen": "⚡ El-tavlen (L1/L2)",
+            "kontrolrummet": "🖥️ Kontrolrummet (IDMZ)",
+        }
+        chapter_target_room = {
+            0: "indgangen",
+            1: "pumpehuset",
+            2: "ventil-oen",
+            3: "el-tavlen",
+            4: "kontrolrummet",
+            5: "indgangen",
+        }.get(self.engine.chapter, "indgangen")
+        if getattr(self.engine, "breaker_tripped", False):
+            chapter_target_room = "el-tavlen"
+
         for r_key, btn in self.room_buttons.items():
+            lbl = base_labels.get(r_key, r_key)
+            is_target = (r_key == chapter_target_room) and self.engine.running
+            prefix = "📍 " if is_target else ""
             if r_key == self.engine.room:
-                btn.configure(bg="#0284c7", fg="white", relief="sunken")
+                btn.configure(text=f"{prefix}{lbl}", bg="#0284c7", fg="white", relief="sunken")
+            elif is_target:
+                btn.configure(text=f"{prefix}{lbl}", bg="#1e3a5f", fg="#fde047", relief="raised")
             else:
-                btn.configure(bg="#16293a", fg="#d8e6ed", relief="groove")
+                btn.configure(text=lbl, bg="#16293a", fg="#d8e6ed", relief="groove")
 
     def update_objective(self) -> None:
         if not self.engine.running:

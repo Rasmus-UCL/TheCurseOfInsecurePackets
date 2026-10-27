@@ -97,8 +97,8 @@ def test_pi_forensics_dilemmas():
 
 
 def test_eltavlen_five_paths():
-    print("Test 5: El-tavlen 5-way engineering branches...")
-    # Path 1: Golden Standard
+    print("Test 5: El-tavlen 5-way engineering branches (Teach Mode mentor vs Exam Mode consequences)...")
+    # Path 1: Correct procedure
     logs1 = []
     e1 = GameEngine(output=logs1.append)
     e1.start("Alice", "Automation")
@@ -109,36 +109,51 @@ def test_eltavlen_five_paths():
     assert "chapter-3-done" in e1.flags
     assert e1.plc_defect_stop is False
 
-    # Path 2: Hasty Cold Restart (Fails with attack loop)
+    # In Teach Mode: Hans stops wrong actions before damage occurs and cites NIS2 / IEC 62443
+    logs_teach = []
+    e_teach = GameEngine(output=logs_teach.append)
+    e_teach.start("TeachUser", "Automation")
+    e_teach.handle_command("gå til el-tavlen")
+    e_teach.handle_command("bloker port 102")
+    assert e_teach.plc.f_passivated is False
+    assert "HANS GRIBER IND" in "".join(logs_teach)
+    assert "NIS2" in "".join(logs_teach)
+
+    # Path 2 (Exam Mode): Hasty Cold Restart (Fails with attack loop)
     logs2 = []
     e2 = GameEngine(output=logs2.append)
     e2.start("Bob", "Automation")
+    e2.toggle_game_mode("exam")
     e2.handle_command("gå til el-tavlen")
     e2.handle_command("tving cpu i run")
     assert "KOLDSTART FEJLEDE" in "".join(logs2)
+    assert "Det dér havde jeg nok ikke gjort" in "".join(logs2)
 
-    # Path 3: Firewall Overkill (Emergency stop & F-I/O passivation)
+    # Path 3 (Exam Mode): Firewall Overkill (Emergency stop & F-I/O passivation)
     logs3 = []
     e3 = GameEngine(output=logs3.append)
     e3.start("Charlie", "Automation")
+    e3.toggle_game_mode("exam")
     e3.handle_command("gå til el-tavlen")
     e3.handle_command("bloker port 102")
     assert e3.plc.f_passivated is True
     assert "F-I/O PASSIVERING" in "".join(logs3)
 
-    # Path 4: Live Firmware Patch without hash (MitM bootloader lock)
+    # Path 4 (Exam Mode): Live Firmware Patch without hash (MitM bootloader lock)
     logs4 = []
     e4 = GameEngine(output=logs4.append)
     e4.start("Dave", "Automation")
+    e4.toggle_game_mode("exam")
     e4.handle_command("gå til el-tavlen")
     e4.handle_command("opdater firmware live")
     assert e4.plc.bootloader_locked is True
     assert "BOOTLOADER LÅST" in "".join(logs4)
 
-    # Path 5: Unisolated Laptop (ARP spoofing / malware)
+    # Path 5 (Exam Mode): Unisolated Laptop (ARP spoofing / malware)
     logs5 = []
     e5 = GameEngine(output=logs5.append)
     e5.start("Eve", "Automation")
+    e5.toggle_game_mode("exam")
     e5.handle_command("gå til el-tavlen")
     e5.handle_command("kobl laptop i plc port")
     assert "ARP-SPOOFING KAPRET" in "".join(logs5)
@@ -291,49 +306,52 @@ def test_autocomplete_and_number_choices():
 
 
 def test_teach_vs_exam_modes_and_shuffling():
-    print("Test 10: Teach vs Exam modes, shuffling, and auto-reprinting...")
+    print("Test 10: Teach vs Exam modes (no spoilers in choices, Hans stops errors in Teach vs dry comment in Exam)...")
     logs = []
     engine = GameEngine(output=logs.append)
     engine.start("Test", "UCL")
 
-    # In Indgangen: Teach mode
-    assert engine.game_mode == "teach"
-    t_choices = engine.get_current_choices()
-    assert any("Start indsats" in lbl for _k, lbl, _c, _cat in t_choices)
-
-    # Toggle to Exam mode
-    engine.toggle_game_mode("exam")
-    assert engine.game_mode == "exam"
-    e_choices = engine.get_current_choices()
-    assert not any("Start indsats" in lbl for _k, lbl, _c, _cat in e_choices)
-
-    # Pumpehuset exam mode: no Faldgrube spoilers
-    engine.handle_command("gå til pumpehuset")
-    pump_exam = engine.get_current_choices()
-    assert not any("Faldgrube" in lbl for _k, lbl, _c, _cat in pump_exam)
-    assert not any("Guldstandard" in lbl for _k, lbl, _c, _cat in pump_exam)
-
-    # Switch back to teach mode in Pumpehuset
-    engine.toggle_game_mode("teach")
-    pump_teach = engine.get_current_choices()
-    assert any("Faldgrube" in lbl for _k, lbl, _c, _cat in pump_teach)
+    # Verify NO spoiler tags ('Faldgrube', 'Fælde', 'Guldstandard') exist in ANY room in either Teach or Exam mode
+    for mode in ("teach", "exam"):
+        engine.toggle_game_mode(mode)
+        for room_key in ("indgangen", "pumpehuset", "ventil-oen", "el-tavlen", "kontrolrummet"):
+            engine.handle_command(f"gå til {room_key}")
+            choices = engine.get_current_choices()
+            for _k, lbl, _c, _cat in choices:
+                assert "Faldgrube" not in lbl, f"Found 'Faldgrube' in {room_key} ({mode}): {lbl}"
+                assert "Fælde" not in lbl, f"Found 'Fælde' in {room_key} ({mode}): {lbl}"
+                assert "Guldstandard" not in lbl, f"Found 'Guldstandard' in {room_key} ({mode}): {lbl}"
 
     # Verify choices are renumbered sequentially 1..N
+    engine.toggle_game_mode("teach")
+    engine.handle_command("gå til pumpehuset")
+    pump_teach = engine.get_current_choices()
     keys = [k for k, _l, _c, _cat in pump_teach]
     expected_keys = [str(i) for i in range(1, len(pump_teach) + 1)]
     assert keys == expected_keys
 
-    # Verify auto-reprint after command: menu is printed at end of output
+    # Verify in Teach mode: Hans stops hard shutdown before breaker trips
     logs.clear()
-    engine.handle_command("undersøg pumpe 2")
-    combined_log = "\n".join(logs)
-    assert "TILGÆNGELIGE VALG [🎓 TEACH MODE" in combined_log
+    engine.handle_command("hård nødnedlukning af vfd")
+    assert engine.breaker_tripped is False
+    assert "HANS GRIBER IND" in "\n".join(logs)
+    assert "NIS2" in "\n".join(logs)
 
+    # Verify in Exam mode: Hard shutdown executes and trips breaker K1
+    engine.toggle_game_mode("exam")
+    logs.clear()
+    engine.handle_command("hård nødnedlukning af vfd")
+    assert engine.breaker_tripped is True
+    assert "Det dér havde jeg nok ikke gjort" in "\n".join(logs)
+
+    # Reset breaker for subsequent tests
+    engine.reset_safety_breaker()
+    engine.toggle_game_mode("teach")
     print("  -> Passed.")
 
 
 def test_tshark_and_scada_blindness_rule():
-    print("Test 11: Real tshark commands, SCADA blind failure on missing FC03, and recovery...")
+    print("Test 11: Real tshark commands, Teach vs Exam SCADA blind failure on missing FC03, and recovery...")
     logs = []
     engine = GameEngine(output=logs.append)
     engine.start("Test", "UCL")
@@ -352,15 +370,23 @@ def test_tshark_and_scada_blindness_rule():
     assert "FC 03" in combined
     assert "FC 06" in combined
 
-    # Step 3: Critical mistake: Forget allow FC 03 (only drop FC 06)
+    # Step 3A: In Teach Mode, Hans stops the incomplete firewall rule (--drop-fc 6 without --allow-fc 3)
+    logs.clear()
+    engine.handle_command("firewall rule add --drop-fc 6")
+    assert engine.scada_blind is False
+    assert "HANS GRIBER IND" in "\n".join(logs)
+    assert "allow-fc 3" in "\n".join(logs)
+
+    # Step 3B: In Exam Mode, forgetting allow FC 03 executes and blinds SCADA
+    engine.toggle_game_mode("exam")
     logs.clear()
     engine.handle_command("firewall rule add --drop-fc 6")
     assert engine.scada_blind is True
     assert "scada-blind" in engine.flags
     assert "chapter-1-done" not in engine.flags
     combined_err = "\n".join(logs)
-    assert "SCADA-ALARM" in combined_err
-    assert "GLEMTE at tillade WinCC SCADA's FC 03" in combined_err
+    assert "TAB AF PROCESOVERVÅGNING" in combined_err
+    assert "Det dér havde jeg nok ikke gjort" in combined_err
 
     # Step 4: Verify tshark displays dropped FC 03 telemetry
     logs.clear()

@@ -54,62 +54,34 @@ class ElTavlenRoom(BaseRoom):
     def get_choices(self, engine: Any) -> list[tuple[str, str, str, str]]:
         flags = getattr(engine, "flags", set())
         ch = getattr(engine, "chapter", 1)
-        mode = getattr(engine, "game_mode", "teach")
         choices: list[tuple[str, str, str, str]] = []
 
         # Breaker reset if tripped from Chapter 1
         if getattr(engine, "breaker_tripped", False):
-            if mode == "exam":
-                choices.append(("1", "Nulstil K1-sikringsrelæet med den manuelle vippekontakt", "nulstil relæ", "warning"))
-            else:
-                choices.append(("1", "⚡ Nulstil sikkerhedsrelæ K1 med den manuelle flip-kontakt", "nulstil relæ", "warning"))
+            choices.append(("1", "⚡ Nulstil sikkerhedsrelæ K1 med den manuelle vippekontakt", "nulstil relæ", "warning"))
+            choices.append(("2", "🚰 Gå tilbage til Pumpehuset", "gå til pumpehuset", "primary"))
+            return choices
 
         # Defective STOP recovery if corrupted DB1
         if getattr(engine, "plc_defect_stop", False):
-            if mode == "exam":
-                choices.append(("1", "Indsæt autoriseret USB-stik og gendan fabrikskalibreret DB1", "gendan plc db1", "success"))
-                choices.append(("2", "Inspicér S7-1500 display for fejlkode 0x4542 (DEFECTIVE STOP)", "undersøg s7-1500", "normal"))
-                choices.append(("3", "Gå til Kontrolrummet", "gå til kontrolrummet", "normal"))
-            else:
-                choices.append(("1", "💾 Indsæt autoriseret USB-stik og gendan fabrikskalibreret DB1", "gendan plc db1", "success"))
-                choices.append(("2", "🔍 Inspicér S7-1500 display for fejlkode 0x4542 (DEFECTIVE STOP)", "undersøg s7-1500", "normal"))
-                choices.append(("3", "🖥️ Gå til Kontrolrummet", "gå til kontrolrummet", "normal"))
+            choices.append(("1", "💾 Indsæt autoriseret USB-stik og gendan fabrikskalibreret DB1", "gendan plc db1", "success"))
+            choices.append(("2", "🔍 Inspicér S7-1500 display for fejlkode 0x4542 (DEFECTIVE STOP)", "undersøg s7-1500", "normal"))
             return choices
 
         if ch == 3:
-            # 5 distinct branching paths & investigative steps
-            if mode == "exam":
-                choices.append(("1", "Inspicér S7-1500 display og diagnostic buffer log", "undersøg s7-1500", "normal"))
-                choices.append(("2", "Undersøg USB-stik fundet i el-tavlens dokumentlomme", "undersøg usb", "normal"))
-                choices.append(("3", "Åbn Wireshark og analyser rå S7comm frames på TCP port 102", "åbn wireshark", "normal"))
-                choices.append(("4", "Spørg driftstekniker Hans om PLC-backup og tidligere teknikere", "spørg hans om lars", "normal"))
-                choices.append(("5", "Åbn efterforskningens sagstavle og opdater hypoteser", "sagstavle", "normal"))
-                choices.append(("6", "Opret en offline sikkerhedskopi af CPU 1516F projektet og DB1 til autoriseret USB-stik", "tag offline backup", "success"))
-                choices.append(("7", "Konfigurer TIA Portal: Deaktivér ubeskyttet PUT/GET kommunikation og aktiver Protection Level 3", "konfigurer tia portal", "success"))
-                choices.append(("8", "Tving CPU 1516F i RUN-mode via den fysiske nøgleomskifter for at genstarte styringen", "tving cpu i run", "danger"))
-                choices.append(("9", "Opret en firewall-regel der blokerer al indgående og udgående TCP port 102 trafik", "bloker port 102", "warning"))
-                choices.append(("10", "Overfør ny firmware-opdatering v2.9 direkte til CPU'en over det aktive netværk", "opdater firmware live", "danger"))
-                choices.append(("11", "Tilslut tekniker-laptop direkte til CPU 1516F PROFINET-port X1 under aktiv drift", "kobl laptop i plc port", "danger"))
-                choices.append(("12", "Gå til Kontrolrummet", "gå til kontrolrummet", "normal"))
-            else:
-                choices.append(("1", "👁️ Trin 1 (Observation): Undersøg S7-1500 display & diagnostic buffer", "undersøg s7-1500", "normal"))
-                choices.append(("2", "🔍 Trin 2 (Efterforskning): Undersøg efterladt USB-stik i tavlens dokumentlomme", "undersøg usb", "normal"))
-                choices.append(("3", "📊 Trin 3 (Dataindsamling): tshark -Y \"s7comm\" (Analyser blokskrivninger på Port 102)", "åbn wireshark", "normal"))
-                choices.append(("4", "☕ Trin 4 (Afhøring): Spørg Hans om PLC-projektet og adgangskoder ('spørg hans om lars')", "spørg hans om lars", "normal"))
-                choices.append(("5", "🕵️ Trin 5 (Sagstavle): Opdater sagstavlen med spor ('sagstavle')", "sagstavle", "normal"))
-                choices.append(("6", "💾 Modtræk Spor 1 (Guldstandard): Tag offline USB-backup før ændring jf. NIS2", "tag offline backup", "success"))
-                choices.append(("7", "⚙️ Modtræk Spor 1b: TIA Portal: Deaktivér ubeskyttet PUT/GET & aktiver Protection Level 3", "konfigurer tia portal", "success"))
-                choices.append(("8", "🔑 Faldgrube 1 (Koldstart): Tving CPU i RUN via nøgleomskifter uden backup", "tving cpu i run", "danger"))
-                choices.append(("9", "🛡️ Faldgrube 2 (Firewall overkill): Bloker Port 102 totalt (Passiverer PROFIsafe!)", "bloker port 102", "warning"))
-                choices.append(("10", "📦 Faldgrube 3 (Live patch): Opdater CPU firmware live uden SHA-256 validering", "opdater firmware live", "danger"))
-                choices.append(("11", "💻 Faldgrube 4 (Uisoleret laptop): Forbind bærbar direkte i CPU PN-port under angreb", "kobl laptop i plc port", "danger"))
-                choices.append(("12", "🖥️ Navigation: Gå til Kontrolrummet", "gå til kontrolrummet", "normal"))
+            choices.append(("1", "🔍 Inspicér S7-1500 display, diagnostic buffer og USB-stikket i tavlens lomme", "undersøg usb", "normal"))
+            choices.append(("2", "📊 Kør tshark og analyser S7comm trafik på TCP port 102", "åbn wireshark", "normal"))
+            if "backup-taken" not in flags:
+                choices.append(("3", "💾 Opret offline sikkerhedskopi af CPU 1516F projekt og DB1 til USB-stik", "tag offline backup", "normal"))
+            choices.append(("4", "⚙️ Konfigurer TIA Portal: Deaktivér PUT/GET og aktiver Protection Level 3", "konfigurer tia portal", "normal"))
+            choices.append(("5", "🔑 Tving CPU 1516F i RUN-mode via den fysiske nøgleomskifter på fronten", "tving cpu i run", "normal"))
+            choices.append(("6", "🛡️ Opret firewall-regel der blokerer al TCP port 102 trafik til tavlen", "bloker port 102", "normal"))
+            choices.append(("7", "📦 Overfør ny firmware-opdatering direkte til CPU'en over netværket", "opdater firmware live", "normal"))
+            choices.append(("8", "💻 Tilslut tekniker-laptop direkte i CPU PROFINET-port X1 under drift", "kobl laptop i plc port", "normal"))
             return choices
 
         # Later chapters
         choices.append(("1", "🔍 Undersøg Siemens S7-1500 Sikkerheds-PLC (RUN)", "undersøg s7-1500", "normal"))
-        choices.append(("2", "📊 Wireshark: Verificer Port 102 afviser uautoriserede kommandoer", "åbn wireshark", "normal"))
-        choices.append(("3", "🖥️ Gå til Kontrolrummet", "gå til kontrolrummet", "normal"))
-        choices.append(("4", "🚰 Gå til Pumpehuset", "gå til pumpehuset", "normal"))
-        choices.append(("5", "💨 Gå til Ventil-øen", "gå til ventil-oen", "normal"))
+        choices.append(("2", "📊 Kør tshark og verificer Port 102 status", "åbn wireshark", "normal"))
+        choices.append(("3", "🖥️ Gå til Kontrolrummet (IDMZ)", "gå til kontrolrummet", "primary"))
         return choices

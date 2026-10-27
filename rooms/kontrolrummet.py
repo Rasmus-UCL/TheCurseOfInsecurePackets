@@ -49,59 +49,29 @@ class KontrolrummetRoom(BaseRoom):
     def get_choices(self, engine: Any) -> list[tuple[str, str, str, str]]:
         flags = getattr(engine, "flags", set())
         ch = getattr(engine, "chapter", 1)
-        mode = getattr(engine, "game_mode", "teach")
         choices: list[tuple[str, str, str, str]] = []
 
         if getattr(engine, "scada_log_interrupted", False):
-            if mode == "exam":
-                choices.append(("1", "Genåbn Port 4840 og skift til selektiv X.509 certifikat-validering", "aktiver opc certifikater", "success"))
-                choices.append(("2", "Inspicér SCADA-fejllog for afbrudt miljørapportering", "undersøg scada pc", "normal"))
-                choices.append(("3", "Gå til Hovedindgangen", "gå til indgangen", "normal"))
-            else:
-                choices.append(("1", "🔧 Genåbn Port 4840 & skift til selektiv X.509 certifikat-validering", "aktiver opc certifikater", "success"))
-                choices.append(("2", "🔍 Undersøg SCADA-fejllog for afbrudt miljørapportering", "undersøg scada pc", "normal"))
-                choices.append(("3", "🚪 Gå til Hovedindgangen", "gå til indgangen", "normal"))
+            choices.append(("1", "🔧 Genåbn Port 4840 og skift til selektiv X.509 certifikat-validering", "aktiver opc certifikater", "success"))
+            choices.append(("2", "🔍 Inspicér SCADA-fejllog for afbrudt miljørapportering", "undersøg scada pc", "normal"))
             return choices
 
         if ch == 4:
-            if mode == "exam":
-                choices.append(("1", "Inspicér WinCC SCADA PC og operatør-sessionslog", "undersøg scada pc", "normal"))
-                choices.append(("2", "Inspicér 4G-routerens IP-konfiguration og aktive VPN-tunneler", "undersøg 4g-router", "normal"))
-                choices.append(("3", "Åbn Wireshark og inspicér ukrypterede OPC.TCP sessioner på port 4840", "åbn wireshark", "normal"))
-                choices.append(("4", "Spørg driftstekniker Hans om operatørvagter og eksterne forbindelser", "spørg hans om kim", "normal"))
-                choices.append(("5", "Åbn efterforskningens sagstavle og opdater hypoteser", "sagstavle", "normal"))
-                if "router-disconnected" not in flags:
-                    choices.append(("6", "Frakobl Teltonika RUT950 4G-routeren og afbryd den eksterne cellulære uplink", "frakobl 4g-router", "success"))
-                if "cert-trusted" not in flags:
-                    choices.append(("7", "Godkend WinCC SCADA klientens X.509 certifikat i OPC UA serverens truststore", "godkend scada certifikat", "success"))
-                if "opc-crypto-active" not in flags:
-                    choices.append(("8", "Konfigurer OPC UA endpoint til Basic256Sha256 og MessageSecurityMode SignAndEncrypt", "aktiver opc kryptering", "success"))
-                if "anon-disabled" not in flags:
-                    choices.append(("9", "Deaktivér Anonymous UserTokenType på port 4840 og håndhæv rollebaseret adgangskontrol", "deaktiver anonymous opc", "success"))
-                choices.append(("10", "Bloker al TCP port 4840 trafik i IDMZ-firewallen for at stoppe datalækage", "bloker port 4840 totalt", "warning"))
-                choices.append(("11", "Gå til Hovedindgangen", "gå til indgangen", "normal"))
-            else:
-                choices.append(("1", "👁️ Trin 1 (Observation): Undersøg WinCC SCADA PC & nattens hændelseslog", "undersøg scada pc", "normal"))
-                choices.append(("2", "🔍 Trin 2 (Dataindsamling): Undersøg 4G-routeren bag racket (SIM & VPN-tunnel)", "undersøg 4g-router", "normal"))
-                choices.append(("3", "📊 Trin 3 (Dataindsamling): Wireshark / tshark (Analyser rå OPC.TCP på Port 4840)", "åbn wireshark", "normal"))
-                choices.append(("4", "☕ Trin 4 (Afhøring): Spørg Hans om Kims nattevagt og 4G-modemet ('spørg hans om kim')", "spørg hans om kim", "normal"))
-                choices.append(("5", "🕵️ Trin 5 (Sagstavle): Gennemse spor og opdater hovedmistænkte ('sagstavle')", "sagstavle", "normal"))
-                if "router-disconnected" not in flags:
-                    choices.append(("6", "🔌 Modtræk 1 (Perimeter): Frakobl & konfisker den uautoriserede 4G-router", "frakobl 4g-router", "success"))
-                if "cert-trusted" not in flags:
-                    choices.append(("7", "📜 Modtræk 2 (PKI): Flyt WinCC SCADA certifikat fra 'Rejected' til 'Trusted'", "godkend scada certifikat", "success"))
-                if "opc-crypto-active" not in flags:
-                    choices.append(("8", "🔒 Modtræk 3 (Kryptering): Skift SecurityPolicy til Basic256Sha256 / SignAndEncrypt", "aktiver opc kryptering", "success"))
-                if "anon-disabled" not in flags:
-                    choices.append(("9", "🚫 Modtræk 4 (Adgangskontrol): Deaktivér Anonymous User Token & håndhæv RBAC", "deaktiver anonymous opc", "success"))
-                choices.append(("10", "🛡️ Faldgrube: Bloker Port 4840 totalt i firewallen (Afbryder miljølogning!)", "bloker port 4840 totalt", "warning"))
-                choices.append(("11", "🚪 Navigation: Gå til Hovedindgangen", "gå til indgangen", "normal"))
+            choices.append(("1", "🔍 Inspicér WinCC SCADA PC og operatør-sessionslog fra nattevagten", "undersøg scada pc", "normal"))
+            choices.append(("2", "📊 Kør tshark og inspicér OPC.TCP sessioner på port 4840", "åbn wireshark", "normal"))
+            if "router-disconnected" not in flags:
+                choices.append(("3", "🔌 Frakobl Teltonika RUT950 4G-routeren bag server-racket", "frakobl 4g-router", "normal"))
+            if "cert-trusted" not in flags:
+                choices.append(("4", "📜 Flyt WinCC SCADA klientens X.509 certifikat til 'Trusted' i truststoren", "godkend scada certifikat", "normal"))
+            if "opc-crypto-active" not in flags:
+                choices.append(("5", "🔒 Konfigurer OPC UA til Basic256Sha256 og SignAndEncrypt", "aktiver opc kryptering", "normal"))
+            if "anon-disabled" not in flags:
+                choices.append(("6", "🚫 Deaktivér Anonymous UserToken på port 4840 og håndhæv RBAC", "deaktiver anonymous opc", "normal"))
+            choices.append(("7", "🛡️ Bloker al TCP port 4840 trafik i IDMZ-firewallen", "bloker port 4840 totalt", "normal"))
             return choices
 
         # Later chapters
         choices.append(("1", "🔍 Undersøg WinCC SCADA PC (alle parametre grønne)", "undersøg scada pc", "normal"))
-        choices.append(("2", "📊 Wireshark: Bekræft krypteret OPC.TCP session", "åbn wireshark", "normal"))
-        choices.append(("3", "🚪 Gå til Hovedindgangen", "gå til indgangen", "normal"))
-        choices.append(("4", "🚰 Gå til Pumpehuset", "gå til pumpehuset", "normal"))
-        choices.append(("5", "⚡ Gå til Hoved-el-tavlen", "gå til el-tavlen", "normal"))
+        choices.append(("2", "📊 Kør tshark og bekræft krypteret OPC.TCP session", "åbn wireshark", "normal"))
+        choices.append(("3", "🚪 Gå til Hovedindgangen (Fremlæg sagen for Tilsynet)", "gå til indgangen", "primary"))
         return choices

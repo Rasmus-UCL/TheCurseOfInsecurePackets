@@ -41,12 +41,14 @@ def test_gui():
         assert app.engine.room == "pumpehuset"
         assert app.engine.pump_deadline_active is True
 
-        # Step 6: Test Mode Toggle (Teach <-> Exam)
-        print("  -> Testing Teach vs Exam mode toggle...")
+        # Step 6: Test Mode Toggle (Teach <-> Exam) & No Spoilers in either mode
+        print("  -> Testing Teach vs Exam mode toggle & Action Panel buttons...")
         assert app.engine.game_mode == "teach"
         assert "TEACH" in app.mode_btn.cget("text")
+        assert len(app.action_buttons) > 0
         teach_choices = app.engine.get_current_choices()
-        assert any("Faldgrube" in lbl for _k, lbl, _c, _cat in teach_choices)
+        assert not any("Faldgrube" in lbl for _k, lbl, _c, _cat in teach_choices)
+        assert not any("Guldstandard" in lbl for _k, lbl, _c, _cat in teach_choices)
 
         app.toggle_mode()
         assert app.engine.game_mode == "exam"
@@ -67,8 +69,19 @@ def test_gui():
         assert app.engine.active_workbench == "vfd_workbench"
         assert app.map.view_mode == "vfd_workbench"
 
-        # Step 8: Test Faldgrube: Byt om på LAN/WAN on workbench
-        print("  -> Testing faldgrube on workbench: Byt om på LAN/WAN...")
+        # Step 8A: In Teach Mode, Hans stops wrong cabling on workbench
+        print("  -> Testing Teach Mode: Hans stops wrong cabling on workbench...")
+        wb_choices = app.engine.get_current_choices()
+        wrong_key = [k for k, _l, cmd, _c in wb_choices if cmd == "byt om på lan og wan"][0]
+        app.command(wrong_key)
+        app.update()
+        assert app.engine.wrong_cabling is False
+        assert "HANS GRIBER IND" in app.terminal.text.get("1.0", "end")
+
+        # Step 8B: In Exam Mode, wrong cabling executes on workbench
+        print("  -> Testing Exam Mode: wrong cabling executes on workbench...")
+        app.toggle_mode()
+        assert app.engine.game_mode == "exam"
         wb_choices = app.engine.get_current_choices()
         wrong_key = [k for k, _l, cmd, _c in wb_choices if cmd == "byt om på lan og wan"][0]
         app.command(wrong_key)
@@ -84,13 +97,17 @@ def test_gui():
         assert app.engine.vfd_cabled is True
         assert app.engine.wrong_cabling is False
 
-        # Step 10: Test forgetting allow FC 03 (SCADA blind error)
-        print("  -> Testing forgetting allow FC 03 on workbench...")
+        # Step 10: Test forgetting allow FC 03 in Exam Mode (SCADA blind error)
+        print("  -> Testing forgetting allow FC 03 on workbench (Exam Mode)...")
         wb_choices = app.engine.get_current_choices()
         forget_key = [k for k, _l, cmd, _c in wb_choices if "drop-fc 6" in cmd and "allow" not in cmd][0]
         app.command(forget_key)
         app.update()
         assert app.engine.scada_blind is True
+
+        # Switch back to Teach Mode
+        app.toggle_mode()
+        assert app.engine.game_mode == "teach"
 
         # Step 11: Correct with allow FC 03 and drop FC 06
         print("  -> Testing correcting rule with allow FC 03 and drop FC 06...")
@@ -127,19 +144,27 @@ def test_gui():
         assert "Compliance:" in app.metric_compliance_label.cget("text")
         assert "Tillid:" in app.metric_tillid_label.cget("text")
 
-        # Step 16: Test Sagstavle view toggle & interactive board (Etape 2)
-        print("  -> Testing Sagstavle toggle and clue board canvas view...")
+        # Step 16: Test Sagstavle view toggle, static height=310 & clicking clues directly!
+        print("  -> Testing Sagstavle toggle, static 310px height, and clicking clue cards...")
         assert app.map.view_mode == "room"
         app.toggle_sagstavle()
         app.update()
         assert app.map.view_mode == "clue_board"
-        assert int(app.map.cget("height")) == 480
+        assert int(app.map.cget("height")) == 310
         assert "Luk Sagstavle" in app.sagstavle_btn.cget("text")
         assert "menu_from_clue_board" in app.map.canvas_buttons
         assert "close_clue_board" in app.map.canvas_buttons
+        assert "clue_spor_modbus_flood" in app.map.canvas_buttons
 
-        # Test clicking suspect on clue board
-        app.command("anklag morten_pumper")
+        # Simulate clicking directly on the 'spor_modbus_flood' clue card on the Sagstavle canvas!
+        _bx1, _by1, _bx2, _by2, clue_cb = app.map.canvas_buttons["clue_spor_modbus_flood"]
+        clue_cb()
+        app.update()
+        assert app.engine.investigation.clues["spor_modbus_flood"].analyzed is True
+
+        # Test clicking suspect on clue board via canvas_buttons
+        _sx1, _sy1, _sx2, _sy2, susp_cb = app.map.canvas_buttons["susp_morten_pumper"]
+        susp_cb()
         app.update()
         assert app.engine.investigation.prime_suspect_id == "morten_pumper"
 
@@ -147,7 +172,7 @@ def test_gui():
         app.toggle_sagstavle()
         app.update()
         assert app.map.view_mode == "room"
-        assert int(app.map.cget("height")) == 330
+        assert int(app.map.cget("height")) == 310
 
         # Verify prominent Top Header Bar buttons
         assert app.btn_hovedmenu.winfo_exists()
@@ -196,14 +221,27 @@ def test_gui():
         app.command("hovemenu")
         app.update()
 
-        # Step 22: Test launching New Game with Interactive Tutorial (Kapitel 0) from Start Screen
-        print("  -> Testing launching New Game with Intro-Tutorial (Kapitel 0)...")
+        # Step 22: Test launching New Game with Interactive Tutorial (Kapitel 0) & clicking HUD '📊 Kør tshark CLI'
+        print("  -> Testing launching New Game with Intro-Tutorial (Kapitel 0) and HUD tshark button...")
         app.start_new_game(tutorial=True)
         app.update()
         assert app.engine.tutorial_active is True
         assert app.engine.tutorial_step == 1
         assert app.engine.chapter == 0
         assert "INTRO-TUTORIAL" in app.objective_banner.cget("text")
+
+        # Click 'skilt' hotspot on canvas -> opens HUD with 'hud_wireshark', advances tutorial to step 2
+        app.map.select_hotspot("skilt")
+        app.update()
+        assert app.engine.tutorial_step == 2
+        assert "hud_wireshark" in app.map.canvas_buttons
+
+        # Click '📊 Kør tshark CLI' button inside HUD -> executes tshark without AttributeError, advances to step 3!
+        _wx1, _wy1, _wx2, _wy2, ws_cb = app.map.canvas_buttons["hud_wireshark"]
+        ws_cb()
+        app.update()
+        assert app.engine.tutorial_step == 3
+
         app.command("spring tutorial over")
         app.update()
         assert app.engine.tutorial_active is False

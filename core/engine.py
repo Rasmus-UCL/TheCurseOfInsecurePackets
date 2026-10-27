@@ -60,10 +60,11 @@ class GameEngine:
         self.wrong_cabling: bool = False
 
         # Pedagogical Mode, Tutorial & Randomized Choices
-        self.game_mode: str = "teach"  # "teach" (hints/traps visible) or "exam" (neutral realistic options)
+        self.game_mode: str = "teach"  # "teach" (Hans stops errors & explains NIS2/IEC) or "exam" (realistic consequences)
         self.tutorial_active: bool = False
         self.tutorial_step: int = 0
         self.shuffle_choices: bool = True
+        self.auto_print_choices: bool = True
         self._cached_choices: list[tuple[str, str, str, str]] | None = None
         self._cached_state_key: tuple[Any, ...] | None = None
 
@@ -143,21 +144,10 @@ class GameEngine:
         self.player.education = education or "Automation & IT-Teknologi"
 
         self.emit(
-            f"Jens Majer, direktør: \"Velkommen til Nordic H2O Utility, {self.player.name}. "
-            f"Jeg har med glæde noteret mig din baggrund inden for {self.player.education}.\""
-        )
-        self.emit(
-            "Jens: \"Situationen er alvorlig: Om fem arbejdsdage kommer Miljø- og Cybersikkerhedstilsynet "
-            "for at kontrollere os efter NIS2-direktivet (EU 2022/2555) og IEC 62443-standarden. "
-            "Hvis vi dumper, trækkes vores driftstilladelse tilbage!\""
-        )
-        self.emit(
-            "Jens: \"Værre endnu: En ukendt trusselsaktør har allerede fået foden indenfor og saboterer driften. "
-            "Vi har brug for en skarp teknolog, der forstår både PLC'er, netværkssegmentering, industrielle protokoller og dokumentation.\""
-        )
-        self.emit(
-            f"HR-chefen nikker: \"Du er hermed hyret som Lead OT-Sikkerhedskonsulent, {self.player.name}. "
-            "Undersøg anlægget, stop angrebene metodisk, og opbyg dokumentationen til revisoren.\""
+            f"📋 [MISSIONS-BRIEFING — NORDIC H2O UTILITY]\n"
+            f"Direktør Jens Majer: \"Velkommen, {self.player.name} ({self.player.education}). Om 5 arbejdsdage "
+            f"kontrollerer Tilsynet os efter NIS2 (EU 2022/2555) og IEC 62443 — og en trusselsaktør saboterer "
+            f"allerede anlægget! Stop angrebene metodisk, saml retsmedicinske beviser og udpeg synderen.\""
         )
 
         if tutorial:
@@ -168,8 +158,7 @@ class GameEngine:
             self.timer_started_at = 0.0  # Paused during tutorial!
             self.emit(
                 "\n🎓 [KAPITEL 0: SIKKERHEDSGODKENDELSE & UDSTYRSTJEK HOS HANS]\n"
-                "Inden uret starter og du slippes løs i anlægget, gennemgår senior driftstekniker Hans McDonald "
-                "et hurtigt 5-trins udstyrstjek med dig ved Hovedindgangen (du kan til enhver tid springe tutorialen over)."
+                "Inden uret starter, gennemgår senior driftstekniker Hans McDonald et hurtigt 5-trins udstyrstjek med dig."
             )
             self.describe_room()
             return
@@ -178,9 +167,8 @@ class GameEngine:
         self.tutorial_step = 0
         self.chapter = 1
         self.emit(
-            "Ved hovedindgangen tager Hans McDonald, senior driftstekniker, imod dig med sin kaffekop: "
-            "\"Velkommen om bord! Du står ved Hovedindgangen. Før du rører ved noget, anbefaler jeg, at du kigger dig omkring "
-            "eller tager vores 'Rundtur' for at lære zonerne at kende. Gå mod Pumpehuset i produktionshallen, når du er klar til at gå i gang med anlægget.\""
+            "Hans McDonald, senior driftstekniker: \"Velkommen om bord! Tag gerne en hurtig 'Rundtur' her ved "
+            "Hovedindgangen, eller gå direkte til Pumpehuset (L1) for at stoppe det første angreb.\""
         )
 
         self.describe_room()
@@ -615,9 +603,10 @@ class GameEngine:
         r = self.get_current_room()
         self.emit(f"[{r.title.upper()} - {r.purdue_level}]")
         self.emit(r.get_description(self))
-        choices_text = self.format_choices_text()
-        if choices_text:
-            self.emit(choices_text)
+        if self.auto_print_choices:
+            choices_text = self.format_choices_text()
+            if choices_text:
+                self.emit(choices_text)
 
     def get_state_key(self) -> tuple[Any, ...]:
         return (
@@ -678,13 +667,13 @@ class GameEngine:
         choices = self.get_current_choices()
         if not choices:
             return ""
-        mode_badge = "🎓 TEACH MODE (Hjælp & Faldgruber)" if self.game_mode == "teach" else "📝 EKSAMENS-MODE (Realistiske Valg)"
+        mode_badge = "🎓 TEACH MODE (Hans vejleder)" if self.game_mode == "teach" else "📝 EKSAMENS-MODE (Fuld alvor)"
         lines = [
-            f"\n┌── TILGÆNGELIGE VALG [{mode_badge}] ───────────────────────────────",
+            f"\n┌── MULIGE HANDLINGER [{mode_badge}] ──────────────────────────────",
         ]
         for key, label, _cmd, _cat in choices:
             lines.append(f"│ [{key}] {label}")
-        lines.append("└── Tast tal (1-N) eller skriv handling ───────────────────────────────────────────────")
+        lines.append("└── Klik på en handling eller tast tal (1-N) ──────────────────────────────────────────")
         return "\n".join(lines)
 
     def toggle_game_mode(self, target_mode: str | None = None) -> None:
@@ -696,11 +685,11 @@ class GameEngine:
         self._cached_state_key = None
         if self.game_mode == "teach":
             self.emit("\n🎓 [TILSTAND: TEACH MODE AKTIVERET]:")
-            self.emit("Faglige råd, trusselsadvarsler og faldgrube-tags er nu synlige i menuen.")
+            self.emit("Ingen spoilers i valgmulighederne — men hvis du vælger en farlig procedure, griber Hans McDonald ind,")
+            self.emit("forklarer hvorfor det er forkert, og henviser til den rette procedure jf. NIS2 og IEC 62443.")
         else:
             self.emit("\n📝 [TILSTAND: EKSAMENS-MODE AKTIVERET]:")
-            self.emit("Ingen spoilers eller faldgrube-tags! Alle valgmuligheder fremstår som realistiske ingeniørbeslutninger.")
-            self.emit("Valgmulighederne er blandet tilfældigt, så du skal vurdere den tekniske handling nøje.")
+            self.emit("Hans McDonald blander sig ikke i dine tekniske valg. Forkerte beslutninger udløser realistiske driftskonsekvenser!")
 
     def execute_choice(self, key: str) -> bool:
         norm_key = key.lower().strip()
@@ -985,8 +974,8 @@ class GameEngine:
         else:
             self.emit(f"Kommandoen '{command}' blev ikke genkendt. Prøv et tal fra menuen eller skriv 'hjælp'.")
 
-        # Always reprint choices after an action so options are never lost!
-        if self.running and (self.chapter > 0 or self.tutorial_active):
+        # Reprint choices after an action when auto_print_choices is enabled
+        if self.running and self.auto_print_choices and (self.chapter > 0 or self.tutorial_active):
             choices_text = self.format_choices_text()
             if choices_text:
                 self.emit(choices_text)
@@ -1108,31 +1097,53 @@ class GameEngine:
     # CHAPTER 1 ACTIONS
     # -------------------------------------------------------------------------
     def manual_vfd_adjustment_fails(self) -> None:
-        self.emit("\n⚠️ [MANUEL DRIFTSFEJL - SIKKERHEDS-OVERSTYRING]:")
-        self.emit("Du forsøger febrilsk at dreje potentiometeret på frekvensomformerens frontpanel ned på 50 Hz...")
-        self.emit("Men inden for 20 millisekunder overskriver angriberens Modbus-loop værdien tilbage til 1337!")
-        self.emit("Pumpe 2 hyler i smerte, og du taber 20 sekunder på pumpe-timeren!")
-        self.emit("IEC 62443 læresætning: Du kan IKKE overstyre et netværksangreb med manuelle knapper på komponenten. "
-                  "Du er nødt til at etablere en netværksfirewall (conduit) med Deep Packet Inspection!")
+        if self.game_mode == "teach":
+            self.emit("\n🛑 [HANS GRIBER IND — TEACH MODE VEJLEDNING]:")
+            self.emit("Hans McDonald lægger hånden på din skulder, før du når at dreje på potentiometeret:")
+            self.emit("\"Stop en halv, konsulent! Det nytter intet at skrue manuelt på frontpanelet, når en angriber")
+            self.emit("overskriver frekvensomformerens Holding Register 0x0000 via Modbus TCP hvert 20. millisekund!")
+            self.emit("Ifølge IEC 62443-3-2 (Zoner & Conduits) og NIS2 Artikel 21.2.e skal vi isolere komponenten")
+            self.emit("bag en industriel sikkerhedsrouter (SCALANCE S615) på DIN-skinnen og filtrere pakkerne med Deep Packet Inspection!\"")
+            return
+        self.emit("\n⚠️ [MANUEL OVERSTYRING FEJLEDE]:")
+        self.emit("Du drejer potentiometeret på frekvensomformerens frontpanel ned på 50 Hz, men inden for 20 ms")
+        self.emit("overskriver netværksloopet værdien tilbage til 1337! Pumpe 2 hyler videre, og du mister 20 sekunder!")
+        self.emit("Hans McDonald ryster stille på hovedet: \"Det dér havde jeg nok ikke brugt tid på, konsulent... lad os komme videre.\"")
         if self.pump_deadline_active:
             self.pump_deadline_started_at -= 20
 
     def hard_shutdown_vfd(self) -> None:
+        if self.game_mode == "teach":
+            self.emit("\n🛑 [HANS GRIBER IND — TEACH MODE VEJLEDNING]:")
+            self.emit("Hans McDonald griber fat i dit håndled, lige før du flår hovedafbryderen ud:")
+            self.emit("\"Er du gal, makker?! Pumpe 2 kører under 146 Bars tryk med 12 tons vand i DN150-hovedledningen!")
+            self.emit("Hvis du kasserer strømmen brat uden nedrampning, skaber du et destruktivt hydraulisk vandslag,")
+            self.emit("der sprænger sikkerhedsrelæ K1 i Hoved-el-tavlen og gør hele pumperummet strømløst!")
+            self.emit("Jf. NIS2 Artikel 21.2.c (Driftskontinuitet) og IEC 62443 må en sikkerhedsindsats aldrig forårsage fysisk")
+            self.emit("anlægsskade. Gå i stedet til DIN-skinnen og sæt SCALANCE S615 firewallen op til at filtrere Modbus-trafikken!\"")
+            return
         self.emit("\n🚨 [HYDRAULISK VANDSLAG - DRIFTSAFBRYDELSE]:")
         self.emit("Du flår hovedafbryderen til frekvensomformeren ud under fuld last (146 Bar)!")
-        self.emit("Motoren dør brat. Den pludselige kinetiske standsning af 12 tons vand i DN150-røret skaber et voldsomt trykstød (vandslag).")
-        self.emit("Overspændingsbølgen forplanter sig bagud, og med et højt knald slår sikkerhedsrelæ K1 i Hoved-el-tavlen fra!")
-        self.emit("Frekvensomformeren er nu fuldstændig strømløs. Du kan ikke konfigurere den, før du har været i El-tavlen og nulstillet K1!")
+        self.emit("Den pludselige standsning af 12 tons vand skaber et voldsomt trykstød, og med et højt knald slår sikkerhedsrelæ K1 i Hoved-el-tavlen fra!")
+        self.emit("Frekvensomformeren er nu strømløs.")
+        self.emit("Hans McDonald sukker tungt: \"Det dér havde jeg nok ikke gjort under fuld last, konsulent... nu må vi i El-tavlen og se på konsekvensen.\"")
         self.breaker_tripped = True
         self.flags.add("breaker-tripped")
 
     def block_port_502_blindly(self) -> None:
-        self.emit("\n⚠️ [GROV NETVÆRKSBLOKERING - SCADA BLINDHED]:")
-        self.emit("Du aktiverer en simpel Layer 3 firewall-regel: 'DROP ALL TCP 502'.")
-        self.emit("Angriberen er stoppet, men SCADA-operatøren i kontrolrummet råber i radioen:")
-        self.emit("'Skærmen er frosset! Vi har mistet overvågningen af hele vandværket!'")
-        self.emit("Læresætning: I procesnetværk må du ikke bare blokere porten – du skal implementere Deep Packet Inspection (DPI) "
-                  "der tillader lovlig læsning (FC 03), men blokerer uautoriserede skrivninger (FC 06/16)!")
+        if self.game_mode == "teach":
+            self.emit("\n🛑 [HANS GRIBER IND — TEACH MODE VEJLEDNING]:")
+            self.emit("Hans McDonald stopper dig ved tastaturet:")
+            self.emit("\"Hold da helt ferie, konsulent! Hvis du blokerer hele TCP Port 502 råt i Layer 3/4, stopper du ganske vist")
+            self.emit("angriberen — men du kapper også forbindelsen til vores WinCC SCADA-overvågning i Kontrolrummet!")
+            self.emit("Efter NIS2 Artikel 21 (Availability & Observability) og IEC 62443-3-3 må vi ikke gøre operatørerne blinde.")
+            self.emit("Den rette procedure er at montere SCALANCE S615 på DIN-skinnen og aktivere Deep Packet Inspection (DPI),")
+            self.emit("så vi tillader FC 03 (Read Holding Registers) og kun blokerer FC 06/16 (Write Registers)!\"")
+            return
+        self.emit("\n⚠️ [NETVÆRKSBLOKERING AKTIVERET - SCADA BLINDHED]:")
+        self.emit("Du aktiverer en Layer 3 firewall-regel: 'DROP ALL TCP 502'.")
+        self.emit("SCADA-operatøren i kontrolrummet kalder i radioen: 'Skærmen er frosset! Vi har mistet overvågningen af Pumpe 2!'")
+        self.emit("Hans McDonald ser skævt til dig: \"Det dér havde jeg nok ikke gjort, konsulent... men lad os komme videre.\"")
         self.scada_blind = True
         self.flags.add("scada-blind")
 
@@ -1148,14 +1159,8 @@ class GameEngine:
     def open_vfd_workbench(self) -> None:
         self.active_workbench = "vfd_workbench"
         self.emit("\n🔧 [TS35 DIN-SKINNE ARBEJDSBÆNK ÅBNET]:")
-        self.emit("Du træder hen til 35mm DIN-skinnen ved siden af Pumpe 2.")
-        self.emit("Her skal der etableres et sikkert conduit jf. IEC 62443-3-2 foran frekvensomformeren.")
-        self.emit("Du har en fabriksny Siemens SCALANCE S615 sikkerhedsrouter i kassen.")
-        self.emit("\nFremgangsmåde på arbejdsbænken:")
-        self.emit("  1. Fastgør SCALANCE S615 på DIN-skinnen ('monter scalance på din-skinne')")
-        self.emit("  2. Kobl patchkabler: VFD til LAN (P1) og anlæg til WAN (P5) ('kobl kabler til scalance')")
-        self.emit("  3. Aktivér Modbus DPI regelsæt: Tillad FC 03 Læs, Drop FC 06 Skriv ('aktiver modbus dpi')")
-        self.emit("  4. Eller klik direkte på DIN-skinnen på skærmen foroven!")
+        self.emit("Du træder hen til 35mm DIN-skinnen ved siden af Pumpe 2 med en Siemens SCALANCE S615 sikkerhedsrouter.")
+        self.emit("Her kan du fysisk montere routeren, koble patchkablerne og konfigurere regeltabellen.")
 
     def open_switch_workbench(self) -> None:
         self.active_workbench = "switch_workbench"
@@ -1166,9 +1171,8 @@ class GameEngine:
         self.vfd_mounted = True
         self.active_workbench = "vfd_workbench"
         self.emit("\n🔌 [SCALANCE S615 MONTERET PÅ DIN-SKINNE]:")
-        self.emit("Du klikker Siemens SCALANCE S615 routeren fast på 35mm TS35 DIN-skinnen.")
-        self.emit("Routeren sidder solidt med jordforbindelse via fjederbeslaget.")
-        self.emit("Næste skridt: Kobl netværkskablerne ('kobl kabler til scalance' eller valg 2).")
+        self.emit("Du klikker Siemens SCALANCE S615 routeren fast på 35mm TS35 DIN-skinnen med solid jordforbindelse.")
+        self.emit("Næste skridt: Kobl netværkskablerne mellem VFD og anlægs-uplink.")
 
     def cable_scalance_correctly(self) -> None:
         if not self.vfd_mounted:
@@ -1178,21 +1182,25 @@ class GameEngine:
         self.wrong_cabling = False
         self.active_workbench = "vfd_workbench"
         self.emit("\n🔀 [KABLER FORBUNDET KORREKT - PURDUE LEVEL 1 CONDUIT]:")
-        self.emit("  • Grønt kabel fra SINAMICS VFD tilsluttes beskyttet LAN Port P1.")
-        self.emit("  • Gult anlægskabel fra SCADA/switch tilsluttes WAN Port P5.")
-        self.emit("Link-dioderne blinker grønt! Routeren adskiller nu VFD-cellen fra det øvrige netværk.")
-        self.emit("Næste skridt: Aktivér Modbus DPI regelsættet ('aktiver modbus dpi' eller valg 3).")
+        self.emit("  • Grønt kabel fra SINAMICS VFD tilsluttes beskyttet intern LAN Port P1.")
+        self.emit("  • Gult anlægskabel fra SCADA/switch tilsluttes ekstern WAN Port P5.")
+        self.emit("Link-dioderne blinker grønt! Næste skridt: Konfigurer firewall-reglerne.")
 
     def cable_scalance_wrong(self) -> None:
+        if self.game_mode == "teach":
+            self.emit("\n🛑 [HANS GRIBER IND — TEACH MODE VEJLEDNING]:")
+            self.emit("Hans McDonald peger advarende på portene på SCALANCE S615:")
+            self.emit("\"Hov, konsulent! Du er ved at sætte frekvensomformeren i den ubeskyttede WAN-port (P5) og anlægget i LAN (P1)!")
+            self.emit("Ifølge IEC 62443-3-2 Zone & Conduit-arkitektur skal det sårbare måle-/reguleringsobjekt (VFD'en) altid")
+            self.emit("placeres i den beskyttede interne sikkerhedszone (LAN P1), mens det usikre netværk kobles på WAN (P5).")
+            self.emit("Vælg den korrekte kabling: VFD til LAN (P1) og Anlægs-uplink til WAN (P5)!\"")
+            return
         self.wrong_cabling = True
         self.active_workbench = "vfd_workbench"
-        self.emit("\n⚠️ [FALDGRUBE: FORKERT KABLING - INGEN BESKYTTELSE]:")
-        self.emit("Du forbyttede portene og satte kablet fra frekvensomformeren i WAN i stedet for LAN!")
-        self.emit("Konsekvens:")
-        self.emit("  1. Frekvensomformeren er stadig direkte eksponeret mod angriberens net uden firewall-filtrering.")
-        self.emit("  2. WAN-firewallen blokerer legitim telemetri til WinCC SCADA.")
-        self.emit("Læresætning: I industrielle firewalls skal den sårbare enhed altid placeres i den beskyttede interne LAN-zone!")
-        self.emit("Byt om på kablerne ('kobl kabler til scalance' eller valg 2) for at rette fejlen.")
+        self.emit("\n⚠️ [FORKERT KABLING PÅ SCALANCE S615]:")
+        self.emit("Du satte kablet fra frekvensomformeren i WAN (P5) og anlægget i LAN (P1).")
+        self.emit("Frekvensomformeren er stadig eksponeret, og telemetrien fejler.")
+        self.emit("Hans McDonald kigger på portdioderne: \"Det dér ser lidt omvendt ud, konsulent... men du styrer kablingen.\"")
 
     def close_workbench(self) -> None:
         self.active_workbench = None
@@ -1210,8 +1218,7 @@ class GameEngine:
             self.emit("\n(SCALANCE S615 monteres på TS35 DIN-skinnen og patchkabler forbindes til LAN P1 og WAN P5)")
 
         if self.wrong_cabling:
-            self.emit("⚠️ Kan ikke anvende firewall-regler: Kablerne er krydset forkert! VFD sidder i WAN-porten i stedet for LAN.")
-            self.emit("Byt om på kablerne ('kobl kabler til scalance'), så frekvensomformeren sidder i beskyttet LAN P1!")
+            self.emit("⚠️ Kan ikke anvende firewall-regler: Kablerne er krydset forkert! Kobl VFD til LAN P1 først.")
             return
 
         norm_cmd = cmd.lower()
@@ -1231,40 +1238,37 @@ class GameEngine:
             self.metrics.adjust_tillid(15, "Hans roser rolig motorgang")
             self.metrics.adjust_compliance(15, "IEC 62443 zone 1 conduit etableret")
             self.record_clue("spor_modbus_flood")
-            self.emit("\n✅ [SCALANCE S615 DPI REGEL AKTIVERET - GULDSTANDARD]:")
-            self.emit("Regel oprettet: PERMIT Modbus TCP FC 03 (WinCC SCADA Telemetri)")
-            self.emit("Regel oprettet: DROP & LOG Modbus TCP FC 06/16 (Sabotage Register-skrivning)")
-            self.emit("Default Policy: DROP (Conduit IEC 62443-3-2)")
-            self.emit("\n🎉 RESULTAT:")
-            self.emit("  • WinCC SCADA modtager ubrudt telemetri via FC 03.")
-            self.emit("  • Angriberens uautoriserede Modbus FC 06-pakker droppes ved indgangen til cellen.")
-            self.emit("  • Pumpe 2's omdrejningstal falder til 450 RPM. Manometeret stabiliserer sig på 42.0 Bar!")
+            self.emit("\n✅ [SCALANCE S615 DPI REGEL AKTIVERET]:")
+            self.emit("  • PERMIT Modbus TCP FC 03 (WinCC SCADA Telemetri)")
+            self.emit("  • DROP & LOG Modbus TCP FC 06/16 (Sabotage Register-skrivning)")
+            self.emit("  • Default Policy: DROP (Conduit IEC 62443-3-2)")
+            self.emit("🎉 Pumpe 2's omdrejningstal falder til 450 RPM, og trykket stabiliserer sig på 42.0 Bar!")
             self.emit("\n[MÅL] NYT MÅL: Kapitel 2 aktiveret! Hans kalder over radioen:")
             self.emit("'Skynd dig til VENTIL-ØEN! Ventilerne danser rundt i et PROFINET kaos!'")
             self.emit_investigation_checkpoint("Pumpehuset (Kapitel 1)")
             return
 
-        # Case B: The critical mistake: Forgetting allow FC 03 (only drop FC 06)
+        # Case B: Forgetting allow FC 03 (only drop FC 06)
         if has_drop_fc6 and not has_allow_fc3:
+            if self.game_mode == "teach":
+                self.emit("\n🛑 [HANS GRIBER IND — TEACH MODE VEJLEDNING]:")
+                self.emit("Hans McDonald kigger dig over skulderen, før du trykker 'Apply' på firewall-reglen:")
+                self.emit("\"Vent et øjeblik, konsulent! Du har kun skrevet '--drop-fc 6', men du mangler '--allow-fc 3'!")
+                self.emit("SCALANCE S615 kører med industriel 'Default Deny' (alt der ikke er eksplicit tilladt, blokeres).")
+                self.emit("Hvis du udelader 'allow-fc 3', blokerer firewallen også WinCC SCADA's Read Holding Registers (FC 03),")
+                self.emit("så kontrolrummet mister al overvågning af Pumpe 2!")
+                self.emit("Jf. NIS2 Artikel 21.2.c (Driftskontinuitet) og IEC 62443 skal du bruge hele DPI-reglen:")
+                self.emit("'firewall rule add --allow-fc 3 --drop-fc 6'!\"")
+                return
             self.scada_blind = True
             self.flags.add("scada-blind")
             self.metrics.adjust_drift(-25, "SCADA blindet - telemetritab")
-            self.metrics.adjust_tillid(-15, "Hans i panik over blinde transmittere")
+            self.metrics.adjust_tillid(-15, "Hans bekymret over blinde transmittere")
             self.metrics.adjust_compliance(-10, "Mangler driftsobservation")
-            self.emit("\n⚠️ [FIREWALL-REGEL AKTIVERET - MEN SCADA GIK I FEJL!]:")
-            self.emit("Regel oprettet: DROP & LOG Modbus TCP FC 06/16.")
-            self.emit("Hov! SCALANCE S615 kører med industriel default-deny policy, og du har IKKE oprettet en ALLOW-regel for FC 03!")
-            self.emit("\n🚨 SCADA-ALARM HYLER I KONTROLRUMMET:")
-            self.emit("\"ALARM: TAB AF PROCESOVERVÅGNING PÅ PUMPE 2! (WinCC Modbus Timeout Port 502)\"")
-            self.emit("\nHans McDonald kalder febrilsk over radioen:")
-            self.emit("\"Hov, makker! Hvad skete der lige?! Pumpe 2 trykket på driftsskærmen viser '??? BAR' og blinker rødt!")
-            self.emit("Du har nok afvist angriberens FC 06 sabotage, men du GLEMTE at tillade WinCC SCADA's FC 03 (Read Holding Registers)!")
-            self.emit("Firewallen blokerer alt der ikke er eksplicit tilladt, så vi kan slet ikke se om anlægget kører!\"")
-            self.emit("\nLæresætning (IEC 62443 / NIS2 Artikel 21):")
-            self.emit("I OT-sikkerhed er Oppetid & Observability (Availability) lige så vigtigt som integritet!")
-            self.emit("En firewall-regel i et industrielt conduit skal altid eksplicit tillade legitim procesovervågning (FC 03).")
-            self.emit("\n💡 Prøv at køre 'tshark -Y \"modbus\"' for at se de blokerede SCADA-pakker.")
-            self.emit("Ret fejlen ved at tilføje allow-reglen: 'firewall rule add --allow-fc 3 --drop-fc 6'")
+            self.emit("\n⚠️ [FIREWALL-REGEL AKTIVERET - SCADA MISTEDE FORBINDELSEN]:")
+            self.emit("Regel oprettet: DROP & LOG Modbus TCP FC 06/16 (Default Policy: DROP).")
+            self.emit("SCADA-alarmen hyler i kontrolrummet: \"ALARM: TAB AF PROCESOVERVÅGNING PÅ PUMPE 2! (Modbus Timeout)\"")
+            self.emit("Hans McDonald ser alvorligt på dig: \"Det dér havde jeg nok ikke gjort uden at tjekke læsetrafikken, konsulent... men lad os komme videre.\"")
             return
 
         # Case C: Blocking all port 502
@@ -1275,8 +1279,7 @@ class GameEngine:
         # Case D: Allow all
         if "allow all" in norm_cmd or "allow modbus" in norm_cmd:
             self.emit("\n⚠️ [FIREWALL-REGEL FOR ÅBEN - SABOTAGE FORTSÆTTER]:")
-            self.emit("Du oprettede en regel der tillader al Modbus TCP-trafik uden inspektion.")
-            self.emit("Angriberen overskriver fortsat register 0x0000 med 1337! Pumpe 2 skriger videre!")
+            self.emit("Du oprettede en regel der tillader al Modbus TCP-trafik uden inspektion. Pumpe 2 skriger videre!")
             return
 
         self.emit("Ukendt firewall-kommando. Eksempel: 'firewall rule add --allow-fc 3 --drop-fc 6' eller 'firewall status'")
@@ -1308,6 +1311,21 @@ class GameEngine:
     # CHAPTER 2 ACTIONS
     # -------------------------------------------------------------------------
     def handle_pi_removal(self, method: str) -> None:
+        if self.game_mode == "teach" and method not in {"faraday", "sikr", "pose"}:
+            self.emit("\n🛑 [HANS GRIBER IND — TEACH MODE VEJLEDNING]:")
+            if method in {"trash", "skraldespand"}:
+                self.emit("Hans McDonald griber fat i din arm, før du smider Raspberry Pi'en i skraldespanden:")
+                self.emit("\"Stop, konsulent! Den sorte boks er vores vigtigste fysiske bevismateriale i en verserende cyberhændelse!")
+                self.emit("Ifølge NIS2 Artikel 23 (Rapporteringspligt) og ISO/IEC 27037 (Digital Forensics / Chain of Custody)")
+                self.emit("skal ukendt hardware sikres i en antistatisk Faraday-pose og journaliseres med SHA-256 hash — aldrig smides ud!\"")
+            else:
+                self.emit("Hans McDonald smækker låget på din bærbar i, før du sætter det fremmede SD-kort i:")
+                self.emit("\"Er du sindsyg, konsulent?! Man sætter ALDRIG ukendt hardware eller SD-kort fra et angrebet netværk")
+                self.emit("direkte i sin egen ingeniør-PC (USB/SD Rubber Ducky risiko) eller tager det med hjem!")
+                self.emit("Efter NIS2 Artikel 21.2.b (Håndtering af hændelser) og ISO/IEC 27037 skal enheden isoleres")
+                self.emit("i en Faraday-pose og overdrages til retsmedicinsk analyse i et sandbox-miljø!\"")
+            return
+
         success, message = self.forensics.secure_rogue_pi(method)
         self.emit(f"\n{message}")
         self.flags.add("pi-removed")
@@ -1320,15 +1338,26 @@ class GameEngine:
         elif method in {"trash", "skraldespand"}:
             self.metrics.adjust_compliance(-30, "Destruktion af retsmedicinsk bevis")
             self.metrics.adjust_tillid(-10, "Hans utilfreds med sjusk")
-        elif method in {"reuse", "genbrug", "infected", "sd-kort"}:
+            self.emit("Hans McDonald trækker på skuldrene: \"Det dér havde jeg nok ikke smidt ud før Tilsynet kommer, konsulent... men lad os komme videre.\"")
+        elif method in {"reuse", "genbrug", "infected", "sd-kort", "sd-kort i laptop"}:
             self.metrics.adjust_sikkerhed(-25, "Kompromitteret udstyr genanvendt")
             self.metrics.adjust_compliance(-25, "Sikkerhedsbrud på privat hardware")
+            self.emit("Hans McDonald ser skeptisk på dig: \"Det dér havde jeg nok ikke sat til min arbejds-PC, konsulent... men lad os komme videre.\"")
         self.record_clue("spor_sort_boks")
         self.emit("\nDu kan nu udskifte den gamle D-Link switch med den industrielle SCALANCE XB-200 med MRP-ring!")
 
     def unplug_switch_abruptly(self) -> None:
         if "chapter-2-done" in self.flags:
             self.emit("SCALANCE switchen er allerede monteret og kører med MRP-ring.")
+            return
+        if self.game_mode == "teach":
+            self.emit("\n🛑 [HANS GRIBER IND — TEACH MODE VEJLEDNING]:")
+            self.emit("Hans McDonald holder dine hænder væk fra patchkablerne i D-Link switchen:")
+            self.emit("\"Stop en halv, konsulent! Hvis du bare flår alle kablerne ud af switchen i ét ryk uden at have")
+            self.emit("fjernet den rogue enhed og forberedt udskiftningen til SCALANCE XB-200 med MRP-ring,")
+            self.emit("mister Festo-ventilerne deres setpunkt øjeblikkeligt og udløser destruktiv kavitation i Pumpe 2!")
+            self.emit("Jf. NIS2 Artikel 21.2.c og IEC 62439-2 (MRP Redundancy): Undersøg først kabelbakken,")
+            self.emit("fjern den uautoriserede boks i en Faraday-pose, og udskift derefter switchen kontrolleret!\"")
             return
         if not self.cavitation_deadline_active:
             self.cavitation_deadline_started_at = time.monotonic()
@@ -1337,22 +1366,29 @@ class GameEngine:
             self.metrics.adjust_tillid(-10, "Hans bange for ødelagt rørnetværk")
             self.emit("\n🚨 [AKUT KAVITATION-ALARM - 90 SEKUNDER TIL DESTRUKTION!]:")
             self.emit("Du flår kablerne ud af D-Link switchen uden forudgående forberedelse!")
-            self.emit("Ventilerne låser øjeblikkeligt i uheldig position, modtrykket i hovedrøret forsvinder, og Pumpe 2 begynder at KAVITERE voldsomt!")
-            self.emit("DU HAR 90 SEKUNDER TIL AT FÅ SCALANCE SWITCHEN MONTERET OG PROFINET MRP-RINGEN GENOPRETTET!")
+            self.emit("Ventilerne låser øjeblikkeligt i uheldig position, og Pumpe 2 begynder at KAVITERE voldsomt!")
+            self.emit("Hans McDonald bider tænderne sammen: \"Det dér havde jeg nok ikke gjort i blinde, konsulent... nu har vi 90 sekunder!\"")
         else:
             self.emit("Kavitations-alarmen er allerede i gang! Monter SCALANCE switchen hurtigst muligt!")
 
     def reboot_et200sp_fails(self) -> None:
+        if self.game_mode == "teach":
+            self.emit("\n🛑 [HANS GRIBER IND — TEACH MODE VEJLEDNING]:")
+            self.emit("Hans McDonald peger på den blinkende BF-diode på ET 200SP-stationen:")
+            self.emit("\"Vent lidt, konsulent! At genstarte I/O-stationen hjælper ikke, når en aktiv angriber på Layer 2")
+            self.emit("sender uautentificerede PROFINET DCP 'Set Name'-pakker ud på switchen!")
+            self.emit("Ifølge IEC 62443-3-3 (System Integrity & Network Segmentation) skal vi først finde og fjerne")
+            self.emit("den rogue enhed under kabelbakken og derefter montere en managed switch med Port Security!\"")
+            return
         self.emit("\n⚠️ [GENSTART FEJLEDE - PROFINET DCP IDENTITETSKAPRET]:")
-        self.emit("Du genstarter ET 200SP I/O stationen...")
-        self.emit("Men i samme sekund I/O-modulet booter, sender den rogue Raspberry Pi en DCP Set-ramme, der omdøber stationen til 'rogue-io'!")
-        self.emit("Hans McDonald råber: 'En genstart løser intet, så længe der sidder en rogue enhed på kablet! Kobl den fra kabelbakken!'")
+        self.emit("Du genstarter ET 200SP I/O stationen, men i samme sekund den booter, omdøbes den igen til 'rogue-io'!")
+        self.emit("Hans McDonald mumler: \"Det dér havde jeg nok ikke forventet ville løse et netværksangreb, konsulent... lad os komme videre.\"")
 
     def solve_chapter_2(self) -> None:
         if "pi-removed" not in self.flags:
             self.emit("\n⚠️ [PORT SECURITY VIOLATION]:")
             self.emit("Du monterer SCALANCE switchen, men den rogue Raspberry Pi sidder stadig på kabelbakken!")
-            self.emit("Switchen detekterer spoofing på Port 4 og lukker porten. Frakobl den rogue Raspberry Pi for at genoprette determinismen!")
+            self.emit("Undersøg kabelbakken og fjern den uautoriserede enhed først.")
             return
 
         self.cavitation_deadline_active = False
@@ -1386,6 +1422,15 @@ class GameEngine:
 
     def configure_tia_portal(self) -> None:
         if "backup-taken" not in self.flags:
+            if self.game_mode == "teach":
+                self.emit("\n🛑 [HANS GRIBER IND — TEACH MODE VEJLEDNING]:")
+                self.emit("Hans McDonald lægger hånden over musen ved TIA Portal-arbejdsstationen:")
+                self.emit("\"Stop en halv, konsulent! Du er ved at skrive en ny sikkerhedskonfiguration ned i en S7-1500 F-PLC")
+                self.emit("under et aktivt netværksangreb UDEN først at have taget en offline sikkerhedskopi!")
+                self.emit("Hvis netværket hakker under overførslen, korrumperes datablok DB1, og PLC'en går i DEFECTIVE STOP!")
+                self.emit("Ifølge NIS2 Artikel 21.2.c (Backup Management & Disaster Recovery) og IEC 62443 skal du altid")
+                self.emit("tage en krypteret offline USB-backup ('Tag offline sikkerhedskopi af PLC-program'), før du downloader ændringer!\"")
+                return
             self.plc_defect_stop = True
             self.flags.add("plc-defect-stop")
             self.metrics.adjust_drift(-25, "PLC i DEFECTIVE STOP ved mislykket download")
@@ -1393,9 +1438,8 @@ class GameEngine:
             self.record_clue("spor_plc_stop_buffer")
             self.emit("\n🚨 [KORRUPT OVERFØRSEL - PLC GÅET I DEFECTIVE STOP]:")
             self.emit("Du forsøgte at overføre TIA-konfigurationen uden en forudgående offline backup!")
-            self.emit("Et netværksudfald under overførslen medførte en CRC-fejl, der korrumperede datablok DB1.")
-            self.emit("S7-1500 CPU'en blinker gult/rødt med fejlkode 0x4542 (DEFECTIVE STOP).")
-            self.emit("Du må genskabe DB1 fra USB-backup ('gendan plc db1') før CPU'en kan køre!")
+            self.emit("Et netværksudfald under overførslen medførte en CRC-fejl, der korrumperede datablok DB1 (0x4542 DEFECTIVE STOP).")
+            self.emit("Hans McDonald sukker: \"Det dér havde jeg nok ikke gjort uden en backup først, konsulent... nu må vi genskabe DB1.\"")
             return
 
         self.flags.add("chapter-3-done")
@@ -1415,40 +1459,69 @@ class GameEngine:
         self.emit_investigation_checkpoint("Hoved-el-tavlen (Kapitel 3)")
 
     def force_cpu_run_fails(self) -> None:
+        if self.game_mode == "teach":
+            self.emit("\n🛑 [HANS GRIBER IND — TEACH MODE VEJLEDNING]:")
+            self.emit("Hans McDonald stopper din hånd ved nøglekontakten på S7-1500 CPU'en:")
+            self.emit("\"Vent, konsulent! Du kan ikke bare tvinge CPU'en i RUN med nøglekontakten, mens PUT/GET-adgangen")
+            self.emit("stadig står vidt åben på Port 102! Angriberens script vil øjeblikkeligt overskrive DB1 igen.")
+            self.emit("Efter IEC 62443-4-2 (Component Hardening) og NIS2 Artikel 21 skal du først sikre en offline USB-backup")
+            self.emit("og derefter deaktivere PUT/GET samt aktivere Protection Level 3 i TIA Portal!\"")
+            return
         self.metrics.adjust_drift(-25, "Koldstart fejlede - CPU i DEFECTIVE STOP")
         self.metrics.adjust_tillid(-15, "Hans ryster på hovedet over koldstartsforsøg")
         self.record_clue("spor_plc_stop_buffer")
         self.emit("\n⚠️ [KOLDSTART FEJLEDE - ANGREBSLOOP AKTIVERET]:")
-        self.emit("Du drejer nøgleomskifteren på CPU'en fra STOP til RUN uden at have sikret netværket...")
-        self.emit("Angriberens loop fanger opstarten og overskriver øjeblikkeligt DB1 med en byte-bomb på port 102!")
-        self.emit("CPU'en kastes tilbage i DEFECTIVE STOP! Du kan ikke tvinge en PLC i RUN, hvis netværkssårbarheden ikke er lukket!")
+        self.emit("Du drejer nøgleomskifteren på CPU'en fra STOP til RUN, men angriberen overskriver straks DB1 på port 102!")
+        self.emit("Hans McDonald ryster stille på hovedet: \"Det dér havde jeg nok ikke gjort, konsulent... lad os komme videre.\"")
 
     def block_port_102_passivates_safety(self) -> None:
+        if self.game_mode == "teach":
+            self.emit("\n🛑 [HANS GRIBER IND — TEACH MODE VEJLEDNING]:")
+            self.emit("Hans McDonald stiller sig foran celle-firewallen:")
+            self.emit("\"Stop en halv, konsulent! Hvis du blokerer TCP Port 102 (S7comm) totalt i firewallen,")
+            self.emit("afbryder du også den vitale PROFIsafe/S7-kommunikation mellem vores Fail-Safe CPU 1516F og nødstop-modulerne!")
+            self.emit("Det vil udløse øjeblikkelig F-I/O passivering (EN ISO 13849 / IEC 62061) og tvangsstoppe hele vandværket!")
+            self.emit("Jf. NIS2 Artikel 21 og IEC 62443 skal sårbarheden løses ved kilden: Tag først en offline USB-backup")
+            self.emit("og slå derefter uautoriseret PUT/GET fra og sæt Protection Level 3 inde i TIA Portal!\"")
+            return
         self.plc.f_passivated = True
         self.metrics.adjust_drift(-35, "Port 102 blokering kappede PROFIsafe - anlæg nødbremset")
         self.metrics.adjust_tillid(-20, "Hans chokeret over passiveret F-I/O")
         self.emit("\n🚨 [ALARM: F-I/O PASSIVERING & NØDSTOP - EN ISO 13849 / IEC 62061]:")
-        self.emit("Du blokerede port 102 totalt i cellens firewall!")
-        self.emit("Det stoppede angriberen, men kappede samtidig safety-kommunikationen mellem CPU 1516F og de decentrale ET 200SP I/O-moduler.")
-        self.emit("Safety-systemet reagerer som designet: Udløser øjeblikkelig F-I/O passivering og nødstop af hele fabrikken!")
-        self.emit("Læresætning: Sikkerheds-I/O kan ikke bare isoleres blindt – safety-conduits skal tillade autoriseret PROFIsafe-trafik!")
+        self.emit("Du blokerede port 102 totalt i cellens firewall, hvilket kappede safety-kommunikationen og udløste F-I/O passivering!")
+        self.emit("Hans McDonald ser bleg ud: \"Det dér havde jeg nok ikke gjort på en Fail-Safe PLC, konsulent... men lad os komme videre.\"")
 
     def live_firmware_patch_corrupts(self) -> None:
+        if self.game_mode == "teach":
+            self.emit("\n🛑 [HANS GRIBER IND — TEACH MODE VEJLEDNING]:")
+            self.emit("Hans McDonald afbryder firmware-downloaden:")
+            self.emit("\"Hold op, konsulent! Man kører ALDRIG en uverificeret live firmware-opdatering direkte over et")
+            self.emit("kompromitteret procesnetværk uden kodesignering og SHA-256 kontrol!")
+            self.emit("Ifølge NIS2 Artikel 21.2.d (Supply Chain Security) og Artikel 21.2.e risikerer du et Man-in-the-Middle")
+            self.emit("angreb, der låser CPU'ens bootloader permanent. Sikr i stedet en offline USB-backup og hærd")
+            self.emit("adgangskontrollen (Protection Level 3 & deaktiver PUT/GET) i TIA Portal!\"")
+            return
         self.plc.bootloader_locked = True
         self.metrics.adjust_drift(-30, "Bootloader låst efter MitM firmware corrupt")
         self.metrics.adjust_compliance(-20, "Overtrædelse af supply chain krav")
         self.emit("\n🚨 [SUPPLY CHAIN OVERTRÆDELSE - BOOTLOADER LÅST]:")
         self.emit("Du downloadede en ny firmware-pakke over det inficerede netværk uden at verificere SHA-256 hash-værdien!")
-        self.emit("Angriberen udførte et Man-in-the-Middle angreb og injicerede en korrupt bootloader-blok.")
-        self.emit("CPU'en nægter at boote og kræver en fabriksnulstilling (NIS2 Artikel 21.2.e overtrædelse).")
+        self.emit("Hans McDonald ser væk: \"Det dér havde jeg nok ikke gjort på et usikkert netværk, konsulent... men lad os komme videre.\"")
 
     def direct_laptop_arp_poisoned(self) -> None:
+        if self.game_mode == "teach":
+            self.emit("\n🛑 [HANS GRIBER IND — TEACH MODE VEJLEDNING]:")
+            self.emit("Hans McDonald holder igen i dit patchkabel:")
+            self.emit("\"Pas på, konsulent! Hvis du kobler en uisoleret bærbar direkte i PLC'en uden forudgående backup")
+            self.emit("og netværksisolering, kan angriberens ARP-spoofing kapre din TIA-session!")
+            self.emit("Efter NIS2 Artikel 21.2.c skal du starte med at gemme en offline sikkerhedskopi på et krypteret USB-stik")
+            self.emit("og derefter udføre TIA Portal hærdningen kontrolleret!\"")
+            return
         self.metrics.adjust_sikkerhed(-15, "Laptop kompromitteret af ARP-spoofing")
         self.metrics.adjust_drift(-15, "Sikkerhedsrelæ koblede fra")
         self.emit("\n⚠️ [ARP-SPOOFING KAPRET TIA-SESSION]:")
-        self.emit("Du tilsluttede din bærbare direkte i CPU'ens port uden at isolere din egen IP.")
-        self.emit("Angriberens ARP-spoofing opsnappede din ingeniørsession og forsøgte at injicere et uautoriseret OB-kald.")
-        self.emit("Sikkerhedsrelæet koblede fra for at beskytte maskinen!")
+        self.emit("Du tilsluttede din bærbare direkte i CPU'ens port uden isolering, og sikkerhedsrelæet koblede fra.")
+        self.emit("Hans McDonald mumler: \"Det dér havde jeg nok ikke gjort, konsulent... men lad os komme videre.\"")
 
     def restore_plc_db1(self) -> None:
         self.plc_defect_stop = False
@@ -1513,9 +1586,19 @@ class GameEngine:
             self.emit_investigation_checkpoint("Kontrolrummet / IDMZ (Kapitel 4)")
 
     def block_port_4840_blindly(self) -> None:
+        if self.game_mode == "teach":
+            self.emit("\n🛑 [HANS GRIBER IND — TEACH MODE VEJLEDNING]:")
+            self.emit("Hans McDonald stopper dig ved IDMZ-firewallen:")
+            self.emit("\"Vent lidt, konsulent! Hvis du blokerer TCP Port 4840 råt i firewallen, afbryder du vores")
+            self.emit("lovpligtige miljø- og drikkevandsrapportering fra SCADA-serveren til Miljøstyrelsen!")
+            self.emit("Ifølge NIS2 Artikel 21.2.h (Brug af kryptografi) og IEC 62443-3-3 skal port 4840 ikke lukkes,")
+            self.emit("men derimod sikres ved at godkende SCADA X.509-certifikatet, aktivere Basic256Sha256 kryptering")
+            self.emit("og deaktivere 'Anonymous' login i OPC UA-konfigurationen!\"")
+            return
         self.scada_log_interrupted = True
         self.emit("\n⚠️ [MILJØLOGNING AFBRUDT]:")
-        self.emit("Du blokerede port 4840 blindt i firewallen. Lovpligtig miljørapportering til Miljøstyrelsen fejler!")
+        self.emit("Du blokerede port 4840 i firewallen. Lovpligtig miljørapportering til Miljøstyrelsen fejler!")
+        self.emit("Hans McDonald ryster på hovedet: \"Det dér havde jeg nok ikke gjort, konsulent... men lad os komme videre.\"")
 
     def restore_scada_logging(self) -> None:
         self.scada_log_interrupted = False
