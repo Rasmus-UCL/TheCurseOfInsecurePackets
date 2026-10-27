@@ -22,6 +22,29 @@ class TSharkEngine:
         c4_done = "chapter-4-done" in flags
         pi_removed = "pi-removed" in flags
 
+        if room == "indgangen":
+            return [
+                {
+                    "no": "001", "time": "0.000000", "src": "192.168.1.50", "dst": "10.20.1.20",
+                    "proto": "Modbus", "func": "16", "info": "Query: Write Multiple Registers (FC 16) [TEST-SPOR: MORTENS SERVICE-LOG]",
+                    "dissection": [
+                        "Frame 1: 74 bytes på kablet (VLAN 40 - Enterprise/Perimeter SPAN-port)",
+                        "Internet Protocol Version 4, Src: 192.168.1.50 (Hydropump Service-PC), Dst: 10.20.1.20 (Pumpe 2 VFD)",
+                        "Transmission Control Protocol, Src Port: 51200, Dst Port: 502",
+                        "Modbus/TCP: Function 16 (Write Multiple Registers) - Logget under gårsdagens servicebesøg",
+                        " Forensisk Note: Dette spor ('spor_morten_rapport') kan nu analyseres på Sagstavlen!",
+                    ],
+                },
+                {
+                    "no": "002", "time": "0.004210", "src": "10.20.4.10", "dst": "10.20.4.1",
+                    "proto": "ICMP", "func": "Echo", "info": "Echo (ping) request — Gateway Health Check (Purdue Level 4 -> IDMZ)",
+                    "dissection": [
+                        "Frame 2: 42 bytes på kablet (VLAN 40)",
+                        "Normal perimetertjek fra Hovedindgangens test-switch.",
+                    ],
+                },
+            ]
+
         if room == "pumpehuset":
             if scada_blind:
                 return [

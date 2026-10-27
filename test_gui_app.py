@@ -196,6 +196,19 @@ def test_gui():
         app.command("hovemenu")
         app.update()
 
+        # Step 22: Test launching New Game with Interactive Tutorial (Kapitel 0) from Start Screen
+        print("  -> Testing launching New Game with Intro-Tutorial (Kapitel 0)...")
+        app.start_new_game(tutorial=True)
+        app.update()
+        assert app.engine.tutorial_active is True
+        assert app.engine.tutorial_step == 1
+        assert app.engine.chapter == 0
+        assert "INTRO-TUTORIAL" in app.objective_banner.cget("text")
+        app.command("spring tutorial over")
+        app.update()
+        assert app.engine.tutorial_active is False
+        assert app.engine.chapter == 1
+
         # Clean up test save file
         if os.path.exists(expected_save):
             os.remove(expected_save)

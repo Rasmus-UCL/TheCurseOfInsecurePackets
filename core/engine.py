@@ -59,8 +59,10 @@ class GameEngine:
         self.vfd_cabled: bool = False
         self.wrong_cabling: bool = False
 
-        # Pedagogical Mode & Randomized Choices
+        # Pedagogical Mode, Tutorial & Randomized Choices
         self.game_mode: str = "teach"  # "teach" (hints/traps visible) or "exam" (neutral realistic options)
+        self.tutorial_active: bool = False
+        self.tutorial_step: int = 0
         self.shuffle_choices: bool = True
         self._cached_choices: list[tuple[str, str, str, str]] | None = None
         self._cached_state_key: tuple[Any, ...] | None = None
@@ -101,9 +103,28 @@ class GameEngine:
         sim_time = f"Dag {self.simulated_day}, time {self.simulated_hour}"
         newly_found, clue = self.investigation.discover_clue(clue_id, sim_time)
         if newly_found and clue:
-            self.emit(f"\n🔎 [NYT SPOR TIL SAGSTAVLEN]: {clue.title}")
-            self.emit(f"   Kategori: {clue.category} | Skriv 'sagstavle' eller 'analyser spor {clue.id}'")
+            self.emit(f"\n🔎 [NYT SPOR TIL SAGSTAVLEN — ⚠️ UANALYSERET]: {clue.title}")
+            self.emit(f"   Kategori: {clue.category} | Klik på '🕵️ Sagstavle' eller skriv 'analyser spor {clue.id}' for at se, hvem sporet peger på!")
             self.metrics.adjust_tillid(2, f"Nyt spor opdaget: {clue.id}")
+
+    def emit_investigation_checkpoint(self, zone_title: str) -> None:
+        """Remind the player after securing a zone to analyze clues and keep hunting for the culprit."""
+        discovered = self.investigation.get_discovered_clues()
+        unanalyzed = self.investigation.get_unanalyzed_clues()
+        prime_id = self.investigation.prime_suspect_id
+        prime_obj = self.investigation.get_suspect(prime_id) if prime_id else None
+        prime_str = f"{prime_obj.name} ({prime_obj.suspicion_score}%)" if prime_obj else "INGEN VALGT ENDNU (Brug 'anklag <id>' på Sagstavlen)"
+
+        self.emit("\n┌── 🕵️ EFTERFORSKNINGS-CHECKPOINT (JAGTEN PÅ SYNDEREN) ───────────────────────")
+        self.emit(f"│ Hans McDonald tørrer sveden af panden efter sikringen af {zone_title}:")
+        self.emit("│ \"Godt gået med teknikken! Men husk: Tilsynet kræver også, at vi udpeger synderen bag angrebet!\"")
+        self.emit(f"│ • Fundne spor i alt:     {len(discovered)} af {len(self.investigation.clues)}")
+        if unanalyzed:
+            self.emit(f"│ • ⚠️ Uanalyserede spor:  {len(unanalyzed)} stk. ({', '.join(c.id for c in unanalyzed)}) -> Klik '🕵️ Sagstavle' og analyser dem!")
+        else:
+            self.emit("│ • ✅ Analyse-status:     Alle fundne spor er analyseret og koblet til mistænkte.")
+        self.emit(f"│ • ⭐ Hovedmistænkt nu:   {prime_str}")
+        self.emit("└─────────────────────────────────────────────────────────────────────────────")
 
     def show_metrics_status(self) -> None:
         """Display the 4 core plant and security metrics."""
@@ -115,12 +136,11 @@ class GameEngine:
         self.emit("Skriv 'sagstavle' for at se samtlige spor og mistænkte.")
 
     # -------------------------------------------------------------------------
-    # LIFECYCLE & TIMERS
+    # LIFECYCLE, TUTORIAL & TIMERS
     # -------------------------------------------------------------------------
-    def start(self, name: str, education: str) -> None:
+    def start(self, name: str, education: str, tutorial: bool = False) -> None:
         self.player.name = name or "Lead OT-Konsulent"
         self.player.education = education or "Automation & IT-Teknologi"
-        self.chapter = 1
 
         self.emit(
             f"Jens Majer, direktør: \"Velkommen til Nordic H2O Utility, {self.player.name}. "
@@ -139,6 +159,24 @@ class GameEngine:
             f"HR-chefen nikker: \"Du er hermed hyret som Lead OT-Sikkerhedskonsulent, {self.player.name}. "
             "Undersøg anlægget, stop angrebene metodisk, og opbyg dokumentationen til revisoren.\""
         )
+
+        if tutorial:
+            self.tutorial_active = True
+            self.tutorial_step = 1
+            self.chapter = 0
+            self.room = "indgangen"
+            self.timer_started_at = 0.0  # Paused during tutorial!
+            self.emit(
+                "\n🎓 [KAPITEL 0: SIKKERHEDSGODKENDELSE & UDSTYRSTJEK HOS HANS]\n"
+                "Inden uret starter og du slippes løs i anlægget, gennemgår senior driftstekniker Hans McDonald "
+                "et hurtigt 5-trins udstyrstjek med dig ved Hovedindgangen (du kan til enhver tid springe tutorialen over)."
+            )
+            self.describe_room()
+            return
+
+        self.tutorial_active = False
+        self.tutorial_step = 0
+        self.chapter = 1
         self.emit(
             "Ved hovedindgangen tager Hans McDonald, senior driftstekniker, imod dig med sin kaffekop: "
             "\"Velkommen om bord! Du står ved Hovedindgangen. Før du rører ved noget, anbefaler jeg, at du kigger dig omkring "
@@ -148,6 +186,31 @@ class GameEngine:
         self.describe_room()
         self.timer_started_at = time.monotonic()
         self.incident.trigger_incident()
+
+    def complete_tutorial(self, skipped: bool = False) -> None:
+        """Complete or skip Chapter 0 Tutorial and transition into Chapter 1."""
+        if not self.tutorial_active and self.chapter >= 1:
+            return
+        self.tutorial_active = False
+        self.tutorial_step = 0
+        self.chapter = 1
+        self._cached_choices = None
+        self._cached_state_key = None
+
+        if skipped:
+            self.emit("\n⏭️ [INTRO-TUTORIAL SPRUNGET OVER — KAPITEL 1 AKTIVERET!]")
+        else:
+            self.emit("\n🎉 [UDSTYRSTJEK & INTRO-TUTORIAL GENNEMFØRT — KAPITEL 1 AKTIVERET!]")
+            self.metrics.adjust_tillid(5, "Gennemførte sikkerhedsgodkendelse med Hans")
+
+        self.emit(
+            "Hans McDonald åbner ståldøren ind til produktionshallen:\n"
+            "\"Nu gælder det, makker! Uret til Tilsynets 5-dages NIS2-audit er startet. "
+            "Gå ind i Pumpehuset (valg [1] eller klik på '🚰 Pumpehuset (L1)' foroven) når du er klar til at stoppe det første angreb!\""
+        )
+        self.timer_started_at = time.monotonic()
+        self.incident.trigger_incident()
+        self.describe_room()
 
     @property
     def elapsed_seconds(self) -> float:
@@ -268,6 +331,8 @@ class GameEngine:
                 "inventory": list(self.player.inventory),
             },
             "game_mode": self.game_mode,
+            "tutorial_active": self.tutorial_active,
+            "tutorial_step": self.tutorial_step,
             "chapter": self.chapter,
             "room": self.room,
             "flags": list(self.flags),
@@ -302,7 +367,11 @@ class GameEngine:
             "investigation": {
                 "prime_suspect_id": self.investigation.prime_suspect_id,
                 "clues": {
-                    c_id: {"discovered": c.discovered, "discovered_time": c.discovered_time}
+                    c_id: {
+                        "discovered": c.discovered,
+                        "discovered_time": c.discovered_time,
+                        "analyzed": getattr(c, "analyzed", False),
+                    }
                     for c_id, c in self.investigation.clues.items()
                 },
                 "suspects": {
@@ -392,6 +461,8 @@ class GameEngine:
                 self.player.inventory = set(p_data["inventory"])
 
             self.game_mode = data.get("game_mode", "teach")
+            self.tutorial_active = data.get("tutorial_active", False)
+            self.tutorial_step = data.get("tutorial_step", 0)
             self.chapter = data.get("chapter", 1)
             self.room = data.get("room", "indgangen")
             self.flags = set(data.get("flags", []))
@@ -399,7 +470,7 @@ class GameEngine:
             self.help_calls = data.get("help_calls", 0)
 
             elapsed = data.get("elapsed_seconds", 0.0)
-            self.timer_started_at = time.monotonic() - elapsed
+            self.timer_started_at = 0.0 if self.tutorial_active else (time.monotonic() - elapsed)
 
             deadlines = data.get("deadlines", {})
             self.pump_deadline_active = deadlines.get("pump_deadline_active", False)
@@ -441,6 +512,7 @@ class GameEngine:
                 if c_id in self.investigation.clues:
                     self.investigation.clues[c_id].discovered = c_val.get("discovered", False)
                     self.investigation.clues[c_id].discovered_time = c_val.get("discovered_time", "")
+                    self.investigation.clues[c_id].analyzed = c_val.get("analyzed", False)
             for s_id, s_val in inv_data.get("suspects", {}).items():
                 if s_id in self.investigation.suspects:
                     self.investigation.suspects[s_id].suspicion_score = s_val.get("suspicion_score", 0)
@@ -551,6 +623,8 @@ class GameEngine:
         return (
             self.room,
             self.chapter,
+            self.tutorial_active,
+            self.tutorial_step,
             self.active_workbench,
             self.game_mode,
             tuple(sorted(self.flags)),
@@ -561,6 +635,8 @@ class GameEngine:
             self.vfd_mounted,
             self.vfd_cabled,
             self.wrong_cabling,
+            self.investigation.prime_suspect_id,
+            tuple(sorted(c.id for c in self.investigation.get_analyzed_clues())),
         )
 
     def get_current_choices(self) -> list[tuple[str, str, str, str]]:
@@ -580,12 +656,12 @@ class GameEngine:
 
         for item in raw_choices:
             _old_k, label, cmd, cat = item
-            if cmd.startswith("gå til ") or cmd in {"vis rum", "luk workbench"}:
+            if cmd.startswith("gå til ") or cmd in {"vis rum", "luk workbench", "spring tutorial over"}:
                 navs.append((label, cmd, cat))
             else:
                 actions.append((label, cmd, cat))
 
-        if self.shuffle_choices and len(actions) > 1:
+        if self.shuffle_choices and not self.tutorial_active and len(actions) > 1:
             random.shuffle(actions)
 
         combined = actions + navs
@@ -657,6 +733,16 @@ class GameEngine:
             self.emit(f"Du befinder dig allerede i {ALL_ROOMS[self.room].title}.")
             return
 
+        if self.tutorial_active and target_room != "indgangen":
+            self.tutorial_active = False
+            self.tutorial_step = 0
+            if self.chapter == 0:
+                self.chapter = 1
+            if self.timer_started_at == 0.0:
+                self.timer_started_at = time.monotonic()
+                self.incident.trigger_incident()
+            self.emit("\n🎉 [INTRO-TUTORIAL AFSLUTTET — DU TRÆDER IND I ANLÆGGET!]")
+
         self.room = target_room
         self.active_workbench = None
         self.describe_room()
@@ -675,7 +761,7 @@ class GameEngine:
     def handle_command(self, command: str) -> None:
         raw = command.strip()
         if not raw:
-            if self.chapter > 0 and self.running:
+            if (self.chapter > 0 or self.tutorial_active) and self.running:
                 self.emit(self.format_choices_text())
             return
         normalized = re.sub(r"\s+", " ", raw.lower())
@@ -754,6 +840,11 @@ class GameEngine:
             self.emit(self.format_choices_text())
             return
 
+        # Tutorial finish / skip commands
+        if normalized in {"spring tutorial over", "skip tutorial", "spring over", "afslut tutorial", "start mission", "start kapitel 1"}:
+            self.complete_tutorial(skipped=("spring" in normalized or "skip" in normalized))
+            return
+
         # Direct number choice
         if normalized in {str(i) for i in range(1, 20)}:
             if self.execute_choice(normalized):
@@ -774,11 +865,18 @@ class GameEngine:
             self.emit(self.forensics.get_summary())
         elif normalized in {"sagstavle", "tavle", "board", "case board", "clueboard", "investigation", "efterforskning"}:
             self.emit(self.investigation.format_clue_board(self.metrics))
+            if self.tutorial_active and self.tutorial_step == 3:
+                self.tutorial_step = 4
+                self.emit("\n" + self.get_current_room().get_description(self))
         elif normalized in {"spor", "clues", "evidensliste"}:
             self.emit(self.investigation.format_clues_list())
         elif normalized.startswith("analyser spor ") or normalized.startswith("analyser "):
             s_id = normalized.replace("analyser spor ", "").replace("analyser ", "").strip()
             self.emit(self.investigation.format_clue_analysis(s_id))
+            if self.tutorial_active and self.tutorial_step == 4:
+                if self.investigation.get_analyzed_clues() and self.investigation.prime_suspect_id:
+                    self.tutorial_step = 5
+                    self.emit("\n" + self.get_current_room().get_description(self))
         elif normalized in {"mistænkte", "mistaenkte", "suspects", "hypoteser"}:
             self.emit(self.investigation.format_suspects_list())
         elif normalized.startswith("anklag ") or normalized.startswith("hypotese "):
@@ -787,6 +885,10 @@ class GameEngine:
             self.emit(msg)
             if ok:
                 self.metrics.adjust_tillid(5, f"Arbejdshypotese fastsat: {susp_id}")
+                if self.tutorial_active and self.tutorial_step == 4:
+                    if self.investigation.get_analyzed_clues() and self.investigation.prime_suspect_id:
+                        self.tutorial_step = 5
+                        self.emit("\n" + self.get_current_room().get_description(self))
         elif normalized in {"metrikker", "metrics", "score", "konsekvenser"}:
             self.show_metrics_status()
         elif normalized in {"indberet hændelse", "early warning", "indberet", "anmeld hændelse"}:
@@ -797,7 +899,9 @@ class GameEngine:
             self.present_case_investigation()
         elif normalized.startswith("tshark") or normalized in {"man tshark", "cheat tshark", "tshark cheatsheet", "tshark help"}:
             self.flags.add("wireshark-open")
-            if self.room == "pumpehuset":
+            if self.room == "indgangen":
+                self.record_clue("spor_morten_rapport")
+            elif self.room == "pumpehuset":
                 self.record_clue("spor_modbus_flood")
             elif self.room == "ventil-oen":
                 self.record_clue("spor_dcp_storm")
@@ -807,10 +911,15 @@ class GameEngine:
             elif self.room == "kontrolrummet":
                 self.record_clue("spor_opc_leak")
             self.emit(self.sniffer.execute_tshark_command(raw, self.room, engine=self))
+            if self.tutorial_active and self.tutorial_step == 2:
+                self.tutorial_step = 3
+                self.emit("\n" + self.get_current_room().get_description(self))
         elif normalized.startswith("wireshark filter "):
             filt = normalized.removeprefix("wireshark filter ").strip()
             self.flags.add("wireshark-open")
-            if self.room == "pumpehuset":
+            if self.room == "indgangen":
+                self.record_clue("spor_morten_rapport")
+            elif self.room == "pumpehuset":
                 self.record_clue("spor_modbus_flood")
             elif self.room == "ventil-oen":
                 self.record_clue("spor_dcp_storm")
@@ -821,6 +930,9 @@ class GameEngine:
                 self.record_clue("spor_opc_leak")
             self.emit(f"💡 [TSHARK INFO]: I terminalen anvendes 'tshark -Y \"{filt}\"'. Kører filter for dig:")
             self.emit(self.sniffer.execute_tshark_command(f"tshark -Y \"{filt}\"", self.room, engine=self))
+            if self.tutorial_active and self.tutorial_step == 2:
+                self.tutorial_step = 3
+                self.emit("\n" + self.get_current_room().get_description(self))
         elif normalized.startswith("wireshark detaljer "):
             pkt = normalized.removeprefix("wireshark detaljer ").strip()
             self.flags.add("wireshark-open")
@@ -828,7 +940,9 @@ class GameEngine:
             self.emit(self.sniffer.execute_tshark_command("tshark -V", self.room, engine=self))
         elif normalized in {"åbn wireshark", "wireshark", "start wireshark", "sniffer"}:
             self.flags.add("wireshark-open")
-            if self.room == "pumpehuset":
+            if self.room == "indgangen":
+                self.record_clue("spor_morten_rapport")
+            elif self.room == "pumpehuset":
                 self.record_clue("spor_modbus_flood")
             elif self.room == "ventil-oen":
                 self.record_clue("spor_dcp_storm")
@@ -839,6 +953,9 @@ class GameEngine:
                 self.record_clue("spor_opc_leak")
             self.emit(f"💡 [TSHARK INFO]: Kører tshark på '{self.room}_vlan'... (Skriv 'man tshark' for filtre som f.eks. -Y \"modbus\")")
             self.emit(self.sniffer.execute_tshark_command("tshark", self.room, engine=self))
+            if self.tutorial_active and self.tutorial_step == 2:
+                self.tutorial_step = 3
+                self.emit("\n" + self.get_current_room().get_description(self))
         elif normalized.startswith("spørg hans om ") or normalized.startswith("afhør hans om ") or normalized.startswith("spoerg hans om "):
             topic = normalized.replace("spørg hans om ", "").replace("afhør hans om ", "").replace("spoerg hans om ", "").strip()
             self.emit(self.hans.interrogate(self, topic))
@@ -854,6 +971,9 @@ class GameEngine:
         elif normalized.startswith("undersøg ") or normalized.startswith("undersoeg "):
             item = normalized.replace("undersøg ", "").replace("undersoeg ", "")
             self.inspect(item)
+            if self.tutorial_active and self.tutorial_step == 1:
+                self.tutorial_step = 2
+                self.emit("\n" + self.get_current_room().get_description(self))
         elif normalized.startswith("tal med "):
             target = normalized.replace("tal med ", "")
             self.talk_to(target)
@@ -866,7 +986,7 @@ class GameEngine:
             self.emit(f"Kommandoen '{command}' blev ikke genkendt. Prøv et tal fra menuen eller skriv 'hjælp'.")
 
         # Always reprint choices after an action so options are never lost!
-        if self.running and self.chapter > 0:
+        if self.running and (self.chapter > 0 or self.tutorial_active):
             choices_text = self.format_choices_text()
             if choices_text:
                 self.emit(choices_text)
@@ -1121,6 +1241,7 @@ class GameEngine:
             self.emit("  • Pumpe 2's omdrejningstal falder til 450 RPM. Manometeret stabiliserer sig på 42.0 Bar!")
             self.emit("\n[MÅL] NYT MÅL: Kapitel 2 aktiveret! Hans kalder over radioen:")
             self.emit("'Skynd dig til VENTIL-ØEN! Ventilerne danser rundt i et PROFINET kaos!'")
+            self.emit_investigation_checkpoint("Pumpehuset (Kapitel 1)")
             return
 
         # Case B: The critical mistake: Forgetting allow FC 03 (only drop FC 06)
@@ -1247,6 +1368,7 @@ class GameEngine:
         self.emit("PROFINET Media Redundancy Protocol (MRP) aktiv! Ventilerne synkroniserer, og Pumpe 2 trykket er stabilt!")
         self.emit("\n[MÅL] NYT MÅL: Kapitel 3 aktiveret! Hans kalder over radioen:")
         self.emit("'Hoved-el-tavlen har fået et chok - S7-1500 PLC'en er gået i STOP-mode!'")
+        self.emit_investigation_checkpoint("Ventil-øen (Kapitel 2)")
 
     # -------------------------------------------------------------------------
     # CHAPTER 3 ACTIONS (5-WAY BRANCHING)
@@ -1290,6 +1412,7 @@ class GameEngine:
         self.emit("S7-1500 CPU 1516F skifter til grøn RUN-diode. Sikkerhedsdeterminismen er genoprettet!")
         self.emit("\n[MÅL] NYT MÅL: Kapitel 4 aktiveret! Hans kalder over radioen:")
         self.emit("'Skynd dig til KONTROLRUMMET! Vores SCADA-server lækker data, og der sidder en mistænkelig 4G-router!'")
+        self.emit_investigation_checkpoint("Hoved-el-tavlen (Kapitel 3)")
 
     def force_cpu_run_fails(self) -> None:
         self.metrics.adjust_drift(-25, "Koldstart fejlede - CPU i DEFECTIVE STOP")
@@ -1387,6 +1510,7 @@ class GameEngine:
             self.emit("Alle bagdøre er lukkede, og anlæggets zoner er isolerede og deterministiske!")
             self.emit("\n🎉 [SEJR] SAMTLIGE ANGREB ER AFVÆRGET! Kirsten fra Cybersikkerhedstilsynet er ankommet ved Hovedindgangen.")
             self.emit("Gå til Hovedindgangen og fremlæg dokumentationen for at bestå den officielle NIS2-audit!")
+            self.emit_investigation_checkpoint("Kontrolrummet / IDMZ (Kapitel 4)")
 
     def block_port_4840_blindly(self) -> None:
         self.scada_log_interrupted = True
@@ -1475,6 +1599,22 @@ class GameEngine:
                 "Festo ventil-ø og Siemens ET 200SP I/O moduler: Ventilerne cykler kaotisk. "
                 "En statusdiode blinker 'BF' (Bus Fault), fordi PROFINET DCP pakker overskriver enhedens stationsnavn."
             )
+            return
+        if "skilt" in norm or "zonemodel" in norm:
+            self.emit(
+                "\n📜 [EMALJESKILT: NORDIC H2O PURDUE & IEC 62443 ZONEMODEL]:\n"
+                "  • Level 4 (Indgangen):     Enterprise & Perimeter\n"
+                "  • Level 3.5 (Kontrolrum):  IDMZ & SCADA / OPC UA Server\n"
+                "  • Level 1/2 (El-tavlen):   S7-1500 Safety PLC & Sikkerhedsrelæ K1\n"
+                "  • Level 1 (Pumpehuset):    SINAMICS VFD & Pumpe 2 (Modbus TCP)\n"
+                "  • Level 1 (Ventil-øen):    Festo Ventiler & ET 200SP I/O (PROFINET)"
+            )
+            return
+        if "hoveddør" in norm or "dør" in norm:
+            self.emit("Ståldøren ind til produktionshallen. Et gult advarselsskilt kræver sikkerhedsgodkendelse og hjelm.")
+            return
+        if "kaffe" in norm or "automat" in norm:
+            self.emit("Hans McDonalds trofaste kaffemaskine. Den brygger kulsort filterkaffe på 85 grader.")
             return
 
         self.emit(f"Du undersøger {target}. Alt virker som forventet for denne komponent.")

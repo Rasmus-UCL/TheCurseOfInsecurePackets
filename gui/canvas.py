@@ -679,26 +679,39 @@ class GameCanvas(tk.Canvas):
         self.create_text((home_x1 + home_x2) // 2, 25, text="🏠 Hovedmenu", fill="#ffffff", font=("Segoe UI", 9, "bold"))
         self.canvas_buttons["menu_from_clue_board"] = (home_x1, 8, home_x2, 42, lambda: self.master_app.prompt_return_to_menu())
 
-        top_y = 56
-        footer_y = h - 26
-        bottom_y = footer_y - 6
-        avail_h = max(200, bottom_y - top_y)
+        top_y = 52
+        # Step-by-step workflow banner so the player immediately understands how to use the Sagstavle
+        self.create_rectangle(12, top_y, w - 12, top_y + 24, fill="#132232", outline="#0284c7", width=1)
+        self.create_text(
+            20, top_y + 4, anchor="nw",
+            text="💡 SÅDAN BRUGES TAVLEN:  [Trin 1] Klik på ⚠️ NYE SPOR til højre for teknisk analyse   ➔   [Trin 2] Se hvilke mistænkte beviset peger på   ➔   [Trin 3] Klik på en mistænkt til venstre som ⭐ Hovedmistænkt!",
+            fill="#bae6fd", font=("Segoe UI", 8, "bold"),
+        )
+
+        content_top_y = top_y + 28
+        footer_y = h - 24
+        bottom_y = footer_y - 4
 
         # Column 1: Mistænkte & Hypoteser (Left ~38%)
         col1_w = int(w * 0.38)
-        self.create_rectangle(12, top_y, col1_w, bottom_y, fill="#0d131a", outline="#1f2937", width=1)
-        self.create_text(20, top_y + 6, anchor="nw", text="👥 MISTÆNKTE (Klik for at anklage):", fill="#f6d365", font=("Segoe UI", 9, "bold"))
+        self.create_rectangle(12, content_top_y, col1_w, bottom_y, fill="#0d131a", outline="#1f2937", width=1)
+        self.create_text(
+            20, content_top_y + 5, anchor="nw",
+            text="👥 MISTÆNKTE (Klik på kort for at vælge ⭐ Hovedmistænkt):",
+            fill="#f6d365", font=("Segoe UI", 9, "bold"),
+        )
 
         suspects = sorted(self.engine.investigation.suspects.values(), key=lambda x: x.suspicion_score, reverse=True)
-        s_start_y = top_y + 26
+        s_start_y = content_top_y + 25
         s_avail_h = bottom_y - s_start_y
         s_gap = 4 if s_avail_h < 260 else 6
-        s_card_h = max(34, int((s_avail_h - 4 * s_gap) / 5))
+        s_card_h = max(36, int((s_avail_h - 4 * s_gap) / 5))
 
         for idx, s in enumerate(suspects):
-            s_bg = "#271d18" if s.status == "Hovedmistænkt" else "#141c24"
-            border_c = "#f59e0b" if s.status == "Hovedmistænkt" else "#253342"
-            border_w = 2 if s.status == "Hovedmistænkt" else 1
+            is_prime = s.status == "Hovedmistænkt"
+            s_bg = "#2b1e16" if is_prime else "#141c24"
+            border_c = "#f59e0b" if is_prime else "#253342"
+            border_w = 2 if is_prime else 1
 
             cy1 = s_start_y + idx * (s_card_h + s_gap)
             cy2 = cy1 + s_card_h
@@ -706,16 +719,27 @@ class GameCanvas(tk.Canvas):
             cx2 = col1_w - 6
 
             self.create_rectangle(cx1, cy1, cx2, cy2, fill=s_bg, outline=border_c, width=border_w)
-            star = "⭐ " if s.status == "Hovedmistænkt" else ""
-            self.create_text(cx1 + 6, cy1 + 3, anchor="nw", text=f"{star}{s.name}", fill="#f8fafc", font=("Segoe UI", 8, "bold"))
-            self.create_text(cx1 + 6, cy1 + 18, anchor="nw", text=f"{s.role[:32]}", fill="#94a3b8", font=("Segoe UI", 7))
+            star = "⭐ HOVEDMISTÆNKT: " if is_prime else ""
+            name_col = "#fde047" if is_prime else "#f8fafc"
+            self.create_text(cx1 + 6, cy1 + 3, anchor="nw", text=f"{star}{s.name}", fill=name_col, font=("Segoe UI", 8, "bold"))
+            self.create_text(cx1 + 6, cy1 + 17, anchor="nw", text=f"{s.role[:36]}", fill="#94a3b8", font=("Segoe UI", 7))
+
+            linked = self.engine.investigation.get_analyzed_clues_for_suspect(s.id)
+            if linked:
+                link_txt = f"🔗 {len(linked)} analyserede beviser peger her!"
+                link_col = "#34d399"
+            else:
+                link_txt = "Ingen analyserede beviser koblet endnu — klik for at anklage"
+                link_col = "#64748b"
+            if s_card_h >= 44:
+                self.create_text(cx1 + 6, cy1 + 31, anchor="nw", text=link_txt, fill=link_col, font=("Segoe UI", 7, "bold"))
 
             # Suspicion meter
             meter_w = 58
             meter_x1 = cx2 - meter_w - 8
             meter_x2 = cx2 - 8
-            meter_y1 = cy1 + 8
-            meter_y2 = cy1 + 22
+            meter_y1 = cy1 + 6
+            meter_y2 = cy1 + 20
             self.create_rectangle(meter_x1, meter_y1, meter_x2, meter_y2, fill="#0f172a", outline="#334155")
             filled_w = int((s.suspicion_score / 100) * meter_w)
             meter_col = "#ef4444" if s.suspicion_score >= 50 else ("#f59e0b" if s.suspicion_score >= 30 else "#38bdf8")
@@ -727,23 +751,26 @@ class GameCanvas(tk.Canvas):
             btn_id = f"susp_{s.id}"
             self.canvas_buttons[btn_id] = (cx1, cy1, cx2, cy2, lambda sid=s.id: self.master_app.command(f"anklag {sid}"))
 
-        # Column 2: Opdagede Spor (Right ~62% - 2-Column Grid of up to 10 clues)
+        # Column 2: Opdagede Spor (Right ~62% - 2-Column Grid of all 11 clues)
         col2_x1 = col1_w + 10
         col2_x2 = w - 12
-        self.create_rectangle(col2_x1, top_y, col2_x2, bottom_y, fill="#0d131a", outline="#1f2937", width=1)
+        self.create_rectangle(col2_x1, content_top_y, col2_x2, bottom_y, fill="#0d131a", outline="#1f2937", width=1)
 
         discovered = self.engine.investigation.get_discovered_clues()
+        unanalyzed = self.engine.investigation.get_unanalyzed_clues()
         total_clues = len(self.engine.investigation.clues)
+        unanalyzed_badge = f"  |  ⚠️ {len(unanalyzed)} MANGLER ANALYSE!" if unanalyzed else "  |  ✅ Alle fundne analyseret"
         self.create_text(
-            col2_x1 + 10, top_y + 6, anchor="nw",
-            text=f"🔍 OPDAGEDE SPOR ({len(discovered)} af {total_clues} fundet — Klik for analyse):",
-            fill="#f6d365", font=("Segoe UI", 9, "bold"),
+            col2_x1 + 10, content_top_y + 5, anchor="nw",
+            text=f"🔍 SPOR & BEVISER ({len(discovered)}/{total_clues} fundet{unanalyzed_badge}):",
+            fill="#fbbf24" if unanalyzed else "#f6d365", font=("Segoe UI", 9, "bold"),
         )
 
-        c_start_y = top_y + 26
+        c_start_y = content_top_y + 25
         c_avail_h = bottom_y - c_start_y
-        c_gap = 4 if c_avail_h < 260 else 6
-        c_card_h = max(34, int((c_avail_h - 4 * c_gap) / 5))
+        num_rows = 6
+        c_gap = 4 if c_avail_h < 280 else 5
+        c_card_h = max(30, int((c_avail_h - (num_rows - 1) * c_gap) / num_rows))
         sub_col_w = int((col2_x2 - col2_x1 - 22) / 2)
 
         cat_colors = {
@@ -754,10 +781,10 @@ class GameCanvas(tk.Canvas):
             "Konfiguration": "#475569",
         }
 
-        # Render 10 slots (2 columns of 5 rows)
-        for idx in range(10):
-            row = idx % 5
-            col = idx // 5
+        # Render 11 clue slots across 2 columns of 6 rows
+        for idx in range(total_clues):
+            row = idx % num_rows
+            col = idx // num_rows
             cx1 = (col2_x1 + 6) if col == 0 else (col2_x1 + 14 + sub_col_w)
             cx2 = cx1 + sub_col_w
             cy1 = c_start_y + row * (c_card_h + c_gap)
@@ -766,15 +793,32 @@ class GameCanvas(tk.Canvas):
             if idx < len(discovered):
                 c = discovered[idx]
                 cat_col = cat_colors.get(c.category, "#334155")
-                self.create_rectangle(cx1, cy1, cx2, cy2, fill="#16202c", outline="#253545", width=1)
+                is_analyzed = getattr(c, "analyzed", False)
+                card_bg = "#142228" if is_analyzed else "#291d12"
+                card_border = "#10b981" if is_analyzed else "#f59e0b"
+                border_w = 1 if is_analyzed else 2
+                self.create_rectangle(cx1, cy1, cx2, cy2, fill=card_bg, outline=card_border, width=border_w)
 
                 # Category badge
-                self.create_rectangle(cx1 + 4, cy1 + 6, cx1 + 62, cy1 + 22, fill=cat_col, outline="")
-                self.create_text(cx1 + 33, cy1 + 14, text=c.category[:7].upper(), fill="white", font=("Segoe UI", 7, "bold"))
+                self.create_rectangle(cx1 + 4, cy1 + 5, cx1 + 62, cy1 + 21, fill=cat_col, outline="")
+                self.create_text(cx1 + 33, cy1 + 13, text=c.category[:7].upper(), fill="white", font=("Segoe UI", 7, "bold"))
 
-                # Title and room
-                self.create_text(cx1 + 68, cy1 + 3, anchor="nw", text=c.title[:28], fill="#f8fafc", font=("Segoe UI", 8, "bold"))
-                self.create_text(cx1 + 68, cy1 + 18, anchor="nw", text=f"{c.discovery_room} • Klik for analyse", fill="#38bdf8", font=("Segoe UI", 7))
+                # Title and status
+                status_prefix = "✅ " if is_analyzed else "⚠️ NYT: "
+                title_col = "#f8fafc" if is_analyzed else "#fde047"
+                self.create_text(cx1 + 66, cy1 + 3, anchor="nw", text=f"{status_prefix}{c.title[:24]}", fill=title_col, font=("Segoe UI", 8, "bold"))
+
+                if is_analyzed:
+                    s_names = []
+                    for sid in c.points_to_suspects:
+                        s_obj = self.engine.investigation.suspects.get(sid)
+                        s_names.append(s_obj.name.split()[0] if s_obj else sid)
+                    sub_txt = f"➔ Peger på: {', '.join(s_names)}" if s_names else f"{c.discovery_room} • Analyseret"
+                    sub_col = "#6ee7b7"
+                else:
+                    sub_txt = f"{c.discovery_room} • KLIK HER FOR AT ANALYSERE!"
+                    sub_col = "#fb923c"
+                self.create_text(cx1 + 66, cy1 + 17, anchor="nw", text=sub_txt[:36], fill=sub_col, font=("Segoe UI", 7, "bold" if not is_analyzed else "normal"))
 
                 btn_id = f"clue_{c.id}"
                 self.canvas_buttons[btn_id] = (cx1, cy1, cx2, cy2, lambda cid=c.id: self.master_app.command(f"analyser spor {cid}"))
@@ -782,8 +826,7 @@ class GameCanvas(tk.Canvas):
                 # Undiscovered clue slot placeholder
                 self.create_rectangle(cx1, cy1, cx2, cy2, fill="#0a1016", outline="#1c2836", width=1, dash=(3, 3))
                 self.create_text(cx1 + 8, cy1 + 4, anchor="nw", text=f"🔒 Spor #{idx + 1}: Endnu ikke fundet", fill="#64748b", font=("Segoe UI", 7, "bold"))
-                self.create_text(cx1 + 8, cy1 + 18, anchor="nw", text="Gennemsøg netværk og komponenter", fill="#475569", font=("Segoe UI", 7, "italic"))
+                self.create_text(cx1 + 8, cy1 + 17, anchor="nw", text="Undersøg komponenter og tshark i zonerne", fill="#475569", font=("Segoe UI", 7, "italic"))
 
-        footer_y = h - 26
         self.create_rectangle(0, footer_y, w, h, fill="#081018", outline="#1c3347", width=1)
-        self.create_text(16, footer_y + 4, anchor="nw", text="▶ TIP: Klik på en mistænkt for at udnævne som arbejdshypotese, eller klik på et spor for analyse. Tryk '⬅️ Tilbage' for anlægsvisning.", fill="#f6d365", font=("Consolas", 8, "bold"))
+        self.create_text(16, footer_y + 4, anchor="nw", text="▶ TIP: Klik på et ⚠️ NYT SPOR til højre for at analysere det, og klik på en mistænkt til venstre for at vælge ⭐ Hovedmistænkt. Tryk '⬅️ Tilbage' for anlægsvisning.", fill="#f6d365", font=("Consolas", 8, "bold"))

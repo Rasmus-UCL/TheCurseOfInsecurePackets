@@ -376,14 +376,32 @@ class GameApp(tk.Tk):
             justify="left", padx=8, pady=4,
         ).pack(anchor="w")
 
-        # Bottom Launch Button
-        bottom_bar = tk.Frame(card, bg="#0d1822", pady=14)
+        # Bottom Launch & Tutorial Options
+        bottom_bar = tk.Frame(card, bg="#0d1822", pady=12)
         bottom_bar.pack(fill="x")
 
+        self.tutorial_var = tk.BooleanVar(value=True)
+        chk_tut = tk.Checkbutton(
+            bottom_bar,
+            text="🎓 Start med 60-sekunders Intro-Tutorial (Kapitel 0: Lær hotspots, tshark & Sagstavlen med Hans)",
+            variable=self.tutorial_var,
+            bg="#0d1822", fg="#38bdf8", selectcolor="#081018",
+            activebackground="#0d1822", activeforeground="#7dd3fc",
+            font=("Segoe UI", 9, "bold"),
+        )
+        chk_tut.pack(side="left", padx=4)
+
         tk.Button(
-            bottom_bar, text="🚀 START MISSIONEN (GÅ TIL INDGANGEN)",
+            bottom_bar, text="🚀 START DIREKTE (KAP. 1)",
+            bg="#1e293b", fg="#cbd5e1", activebackground="#334155", activeforeground="#ffffff",
+            font=("Segoe UI", 9, "bold"), relief="groove", padx=12, pady=7,
+            command=lambda: self.start_new_game(tutorial=False),
+        ).pack(side="right", padx=(8, 0))
+
+        tk.Button(
+            bottom_bar, text="🕹️ START SPIL (MED VALGTE INDSTILLINGER)",
             bg="#059669", fg="#ffffff", activebackground="#10b981", activeforeground="#000000",
-            font=("Segoe UI", 11, "bold"), relief="raised", padx=24, pady=8,
+            font=("Segoe UI", 10, "bold"), relief="raised", padx=18, pady=7,
             command=self.start_new_game,
         ).pack(side="right")
 
@@ -616,11 +634,12 @@ class GameApp(tk.Tk):
     # -------------------------------------------------------------------------
     # GAME LAUNCH & PERSISTENCE (SAVE / LOAD)
     # -------------------------------------------------------------------------
-    def start_new_game(self) -> None:
+    def start_new_game(self, tutorial: bool | None = None) -> None:
         """Start a brand new game session configured from the start screen."""
         name = self.entry_player_name.get().strip() or "Konsulent"
         edu = self.combo_edu_var.get().strip() or "Automationsteknolog"
         mode = self.menu_mode_var.get() or "teach"
+        use_tutorial = self.tutorial_var.get() if tutorial is None else tutorial
 
         self.engine = GameEngine(output=self.write_to_terminal)
         self.map.engine = self.engine
@@ -628,7 +647,7 @@ class GameApp(tk.Tk):
 
         self.show_gameplay()
         self.terminal.clear()
-        self.engine.start(name, edu)
+        self.engine.start(name, edu, tutorial=use_tutorial)
 
         self.update_objective()
         self.update_nav_highlight()
@@ -829,8 +848,18 @@ class GameApp(tk.Tk):
         self.metric_tillid_label.configure(text=f"🤝 Tillid: {m.tillid}%", fg=tillid_color)
 
         num_clues = len(self.engine.investigation.get_discovered_clues())
+        unanalyzed = len(self.engine.investigation.get_unanalyzed_clues())
         if self.map.view_mode != "clue_board":
-            self.sagstavle_btn.configure(text=f"🕵️ Sagstavle ({num_clues} spor)")
+            if unanalyzed > 0:
+                self.sagstavle_btn.configure(
+                    text=f"🕵️ Sagstavle ({num_clues} spor — ⚠️ {unanalyzed} NYE!)",
+                    bg="#d97706", fg="#ffffff",
+                )
+            else:
+                self.sagstavle_btn.configure(
+                    text=f"🕵️ Sagstavle ({num_clues} spor)",
+                    bg="#7c2d12", fg="#fed7aa",
+                )
 
     def toggle_mode(self) -> None:
         self.engine.toggle_game_mode()
@@ -886,6 +915,21 @@ class GameApp(tk.Tk):
                     text="⚠️ MISSIONEN ER AFSLUTTET. Klik på '🏠 HOVEDMENU' øverst for at starte forfra eller hente et gemt spil.",
                     bg="#7f1d1d", fg="#fee2e2",
                 )
+            return
+
+        if getattr(self.engine, "tutorial_active", False):
+            t_step = getattr(self.engine, "tutorial_step", 1)
+            step_goals = {
+                1: "Trin 1/5: Klik på 'EMALJESKILT' på 2D-skærmen eller tast [1] ('undersøg skilt')",
+                2: "Trin 2/5: Sniff netværkstrafik i terminalen ved at taste [1] eller skrive 'tshark'",
+                3: "Trin 3/5: Åbn Sagstavlen ved at klikke på '🕵️ Sagstavle' eller taste [1] ('sagstavle')",
+                4: "Trin 4/5: Klik på det ⚠️ NYE SPOR på tavlen for at analysere det, og vælg en ⭐ Hovedmistænkt!",
+                5: "Trin 5/5: Du er klar! Tast [1] ('afslut tutorial') eller klik på '🚰 Pumpehuset' for at starte missionen!",
+            }
+            self.objective_banner.configure(
+                text=f"🎓 INTRO-TUTORIAL ({step_goals.get(t_step, 'Følg Hans McDonalds instruktioner')}) — [Timer på pause]",
+                bg="#0f3d3e", fg="#a7f3d0",
+            )
             return
 
         if self.engine.chapter == 0:

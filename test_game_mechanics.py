@@ -693,6 +693,70 @@ def test_save_and_load_persistence():
     print("  -> Passed.")
 
 
+def test_interactive_tutorial_and_active_clue_analysis():
+    print("Test 15: Interactive 5-step Intro-Tutorial (Kapitel 0) & Active Clue Analysis on Sagstavle...")
+    logs = []
+    engine = GameEngine(output=logs.append)
+    engine.start("TutorialElev", "Automationsteknolog", tutorial=True)
+
+    # Verify initial tutorial state (Chapter 0, timers paused, Step 1)
+    assert engine.tutorial_active is True
+    assert engine.tutorial_step == 1
+    assert engine.chapter == 0
+    assert engine.timer_started_at == 0.0
+    assert engine.elapsed_seconds == 0.0
+
+    # Step 1 -> Step 2: Inspect sign
+    engine.handle_command("1")  # Executes 'undersøg skilt'
+    assert engine.tutorial_step == 2
+
+    # Step 2 -> Step 3: Run tshark (discovers 'spor_morten_rapport' as unanalyzed)
+    engine.handle_command("1")  # Executes 'tshark'
+    assert engine.tutorial_step == 3
+    morten_clue = engine.investigation.get_clue("spor_morten_rapport")
+    assert morten_clue.discovered is True
+    assert morten_clue.analyzed is False
+    assert len(engine.investigation.get_unanalyzed_clues()) == 1
+
+    # Step 3 -> Step 4: Open Sagstavle
+    engine.handle_command("1")  # Executes 'sagstavle'
+    assert engine.tutorial_step == 4
+
+    # Step 4A: Analyze the clue (marks analyzed=True and boosts suspicion by +5)
+    morten_susp = engine.investigation.get_suspect("morten_pumper")
+    score_before_analysis = morten_susp.suspicion_score
+    engine.handle_command("analyser spor spor_morten_rapport")
+    assert morten_clue.analyzed is True
+    assert len(engine.investigation.get_unanalyzed_clues()) == 0
+    assert morten_susp.suspicion_score == score_before_analysis + 5
+    assert len(engine.investigation.get_analyzed_clues_for_suspect("morten_pumper")) == 1
+    # Still in step 4 until a prime suspect is also selected
+    assert engine.tutorial_step == 4
+
+    # Step 4B -> Step 5: Select a preliminary prime suspect
+    engine.handle_command("anklag morten_pumper")
+    assert engine.investigation.prime_suspect_id == "morten_pumper"
+    assert engine.tutorial_step == 5
+
+    # Step 5 -> Complete tutorial and enter Chapter 1 (timers start)
+    engine.handle_command("1")  # Executes 'afslut tutorial'
+    assert engine.tutorial_active is False
+    assert engine.tutorial_step == 0
+    assert engine.chapter == 1
+    assert engine.timer_started_at > 0.0
+
+    # Also test skipping tutorial mid-way
+    engine_skip = GameEngine()
+    engine_skip.start("SkipElev", "IT-Teknologi", tutorial=True)
+    assert engine_skip.tutorial_active is True
+    engine_skip.handle_command("spring tutorial over")
+    assert engine_skip.tutorial_active is False
+    assert engine_skip.chapter == 1
+    assert engine_skip.timer_started_at > 0.0
+
+    print("  -> Passed.")
+
+
 if __name__ == "__main__":
     test_purdue_and_iec()
     test_sniffer_and_wireshark()
@@ -708,4 +772,5 @@ if __name__ == "__main__":
     test_narrative_metrics_and_investigation_board()
     test_investigative_chapter_flow_and_finale()
     test_save_and_load_persistence()
+    test_interactive_tutorial_and_active_clue_analysis()
     print("\nALL MECHANICS TESTS PASSED SUCCESSFULLY! [OK]")

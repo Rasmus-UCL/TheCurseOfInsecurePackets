@@ -59,6 +59,7 @@ class Clue:
     associated_suspects: list[str] = field(default_factory=list)
     discovered: bool = False
     discovered_time: str = ""
+    analyzed: bool = False
 
 
 @dataclass
@@ -154,6 +155,7 @@ ROOMS = {
 
 
 OBJECTIVES = {
+    0: "Intro-Tutorial: Gennemfør Hans' sikkerheds- og udstyrstjek i Indgangen (eller vælg 'Spring over').",
     1: "Find og stop Modbus TCP-sabotagen i pumpehuset (IEC 62443-3-2 Zoner & Conduits).",
     2: "Stands PROFINET DCP-kaosset på ventil-øen (Layer 2 hærdning & Port Security).",
     3: "Bring S7-1500 sikkert tilbage fra STOP-mode (Backup & TIA Security Wizard).",

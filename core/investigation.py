@@ -202,6 +202,18 @@ class InvestigationManager:
     def get_discovered_clues(self) -> list[Clue]:
         return [c for c in self.clues.values() if c.discovered]
 
+    def get_unanalyzed_clues(self) -> list[Clue]:
+        return [c for c in self.clues.values() if c.discovered and not c.analyzed]
+
+    def get_analyzed_clues(self) -> list[Clue]:
+        return [c for c in self.clues.values() if c.discovered and c.analyzed]
+
+    def get_analyzed_clues_for_suspect(self, suspect_id: str) -> list[Clue]:
+        return [
+            c for c in self.clues.values()
+            if c.discovered and c.analyzed and suspect_id in c.associated_suspects
+        ]
+
     def get_clue(self, clue_id: str) -> Clue | None:
         return self.clues.get(clue_id)
 
@@ -231,29 +243,36 @@ class InvestigationManager:
     def format_clue_board(self, metrics: MetricValues) -> str:
         """Render full ASCII/Unicode Case Board (Sagstavle)."""
         discovered = self.get_discovered_clues()
+        unanalyzed = self.get_unanalyzed_clues()
         lines: list[str] = [
             "================================================================================",
             "                 🕵️  SAGSTAVLE – NORDIC H2O CYBER-EFTERFORSKNING               ",
             "================================================================================",
+            " SÅDAN BRUGER DU SAGSTAVLEN (3 TRIN):",
+            "   1. Find spor ved at undersøge udstyr, køre 'tshark' og tale med Hans.",
+            "   2. Klik på '⚠️ NYT SPOR' til højre (eller 'analyser spor <id>') for at koble det til mistænkte.",
+            "   3. Klik på en mistænkt til venstre (eller 'anklag <id>') for at vælge din ⭐ Hovedmistænkt.",
+            "--------------------------------------------------------------------------------",
             " METRIKKER FOR ANLÆG OG INDSATS:",
             f"   🔧 Drift:      [{self._render_bar(metrics.drift)}] {metrics.drift:3d}%  (Uptime & vandforsyning)",
             f"   🛡️  Sikkerhed:  [{self._render_bar(metrics.sikkerhed)}] {metrics.sikkerhed:3d}%  (Segmentering & zoner)",
             f"   📜 Compliance: [{self._render_bar(metrics.compliance)}] {metrics.compliance:3d}%  (NIS2 & dokumentation)",
             f"   🤝 Tillid:     [{self._render_bar(metrics.tillid)}] {metrics.tillid:3d}%  (Hans' partnerskab & moral)",
             "--------------------------------------------------------------------------------",
-            " MISTÆNKTE & ARBEJDSHYP Syntax: 'analyser mistænkt <id>' eller 'anklag <id>':",
+            " MISTÆNKTE & ARBEJDSHYPOTESER (Klik på kortet eller skriv 'anklag <id>'):",
         ]
 
         for s in sorted(self.suspects.values(), key=lambda x: x.suspicion_score, reverse=True):
             status_marker = "⭐ [HOVEDMISTÆNKT]" if s.status == "Hovedmistænkt" else f"[{s.status}]"
+            linked_count = len(self.get_analyzed_clues_for_suspect(s.id))
             lines.append(
                 f"   • {s.name:<38} [{self._render_bar(s.suspicion_score, 8)}] {s.suspicion_score:2d}%  {status_marker}"
             )
-            lines.append(f"     ID: {s.id:<18} Rolle: {s.role}")
+            lines.append(f"     ID: {s.id:<18} Rolle: {s.role} | 🔗 Analyserede beviser: {linked_count}")
 
         lines.extend([
             "--------------------------------------------------------------------------------",
-            f" OPDAGEDE SPOR ({len(discovered)} af {len(self.clues)} fundet) - Syntax: 'analyser spor <id>':",
+            f" OPDAGEDE SPOR ({len(discovered)} af {len(self.clues)} fundet | {len(unanalyzed)} mangler analyse):",
         ])
 
         if not discovered:
@@ -265,7 +284,8 @@ class InvestigationManager:
                 if cat_clues:
                     lines.append(f"   [{cat.upper()}]:")
                     for c in cat_clues:
-                        lines.append(f"     🔍 [{c.id}]: {c.title} ({c.discovery_room})")
+                        state_tag = "✅ [ANALYSERET]" if c.analyzed else "⚠️ [NYT - KLIK FOR ANALYSE!]"
+                        lines.append(f"     🔍 [{c.id}] {state_tag}: {c.title} ({c.discovery_room})")
 
         lines.extend([
             "================================================================================",
@@ -281,12 +301,16 @@ class InvestigationManager:
 
         lines = ["\n🔍 [OPDAGEDE SPOR I EFTERFORSKNINGEN]:"]
         for c in discovered:
-            lines.append(f"\n--- Spor ID: {c.id} [{c.category.upper()}] ---")
+            status_str = "✅ ANALYSERET" if c.analyzed else "⚠️ NYT (Ikke analyseret endnu)"
+            lines.append(f"\n--- Spor ID: {c.id} [{c.category.upper()}] — {status_str} ---")
             lines.append(f"Titel:      {c.title}")
             lines.append(f"Lokalitet:  {c.discovery_room} (Fundet: {c.discovered_time})")
             lines.append(f"Beskrivelse:{c.description}")
-            lines.append(f"Peger mod:  {', '.join(c.associated_suspects)}")
-        lines.append("\nTip: Skriv 'analyser spor <id>' for at foretage dybdegående teknisk analyse.")
+            if c.analyzed:
+                lines.append(f"Peger mod:  {', '.join(c.associated_suspects)}")
+            else:
+                lines.append("Peger mod:  [Ukendt indtil sporet analyseres med 'analyser spor " + c.id + "']")
+        lines.append("\nTip: Skriv 'analyser spor <id>' (eller klik på sporet på Sagstavlen) for dybdegående teknisk analyse.")
         return "\n".join(lines)
 
     def format_clue_analysis(self, clue_id: str) -> str:
@@ -296,15 +320,31 @@ class InvestigationManager:
         if not clue.discovered:
             return f"Sporet '{clue_id}' er endnu ikke opdaget på anlægget."
 
+        first_time = not clue.analyzed
+        clue.analyzed = True
+        if first_time:
+            for susp_id in clue.associated_suspects:
+                if susp_id in self.suspects:
+                    susp = self.suspects[susp_id]
+                    susp.suspicion_score = min(100, susp.suspicion_score + 5)
+                    if clue.title not in susp.notes:
+                        susp.notes.append(clue.title)
+
+        suspect_names = [
+            f"{self.suspects[sid].name} ({sid})" if sid in self.suspects else sid
+            for sid in clue.associated_suspects
+        ]
+
         lines = [
-            f"\n🔬 [DYBDEN-ANALYSE AF SPOR: {clue.id}]",
+            f"\n🔬 [DYBDE-ANALYSE AF SPOR: {clue.id}] — ✅ BEVIS KOBLET PÅ SAGSTAVLEN",
             f"Titel:      {clue.title}",
             f"Kategori:   {clue.category} | Zone: {clue.discovery_room}",
             f"Fund:       {clue.description}",
             f"\n🧠 OT-TEKNISK VURDERING:",
             f"{clue.analysis}",
-            f"\n🔗 HYPOTESE-KNYTNING:",
-            f"Dette spor understøtter teorier vedrørende: {', '.join(clue.associated_suspects)}",
+            f"\n🔗 HYPOTESE-KNYTNING (PEGER MOD MISTÆNKTE):",
+            f"Dette spor understøtter teorier vedrørende: {', '.join(suspect_names)}",
+            "💡 Tip: Klik på en mistænkt til venstre på Sagstavlen (eller skriv 'anklag <id>') for at vælge din ⭐ Hovedmistænkt!",
         ]
         return "\n".join(lines)
 
