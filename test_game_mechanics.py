@@ -783,6 +783,90 @@ def test_interactive_tutorial_and_active_clue_analysis():
     print("  -> Passed.")
 
 
+def test_etape2_modular_campaign_variants_and_culprits():
+    print("Test 16: Etape 2 Modular Mission Order, 3 Attack Variations (A/B/C) per room & Dynamic Culprits...")
+    # Test all 3 variants (A, B, C) and all 4 culprits across different mission orders
+    for idx, culprit in enumerate(["lars_ex_tekniker", "morten_pumper", "apt_shadowh2o", "kim_operatoer"]):
+        var_choice = ["A", "B", "C"][idx % 3]
+        logs = []
+        engine = GameEngine(output=logs.append)
+        engine.start(f"Agent_{idx}", "Automationsteknolog", randomize=True)
+        # Force specific variant & non-standard mission order to test all combinations deterministically
+        engine.mission_order = ["el-tavlen", "kontrolrummet", "ventil-oen", "pumpehuset"]
+        engine.room_variants = {
+            "pumpehuset": var_choice,
+            "ventil-oen": var_choice,
+            "el-tavlen": var_choice,
+            "kontrolrummet": var_choice,
+        }
+        engine.investigation.configure_dynamic_case(culprit, engine.room_variants)
+
+        # Verify first target room follows mission_order[0] ("el-tavlen")
+        assert engine.get_current_target_room() == "el-tavlen"
+        engine.handle_command("gå til el-tavlen")
+        engine.handle_command("tshark")
+        engine.handle_command("undersøg usb")
+        engine.handle_command("tag offline backup")
+        engine.handle_command("konfigurer tia portal")
+        assert "chapter-3-done" in engine.flags
+        assert engine.chapter == 2
+        assert engine.get_current_target_room() == "kontrolrummet"
+
+        # 2nd room in order: "kontrolrummet"
+        engine.handle_command("gå til kontrolrummet")
+        engine.handle_command("tshark")
+        engine.handle_command("undersøg scada pc")
+        engine.handle_command("frakobl 4g-router")
+        engine.handle_command("godkend scada certifikat")
+        engine.handle_command("aktiver opc kryptering")
+        engine.handle_command("deaktiver anonymous opc")
+        assert "chapter-4-done" in engine.flags
+        assert engine.chapter == 3
+        assert engine.get_current_target_room() == "ventil-oen"
+
+        # 3rd room in order: "ventil-oen"
+        engine.handle_command("gå til ventil-oen")
+        engine.handle_command("tshark")
+        engine.handle_command("undersøg kabelbakke")
+        engine.handle_command("sikr pi i faraday-pose")
+        engine.handle_command("udskift switch med scalance")
+        assert "chapter-2-done" in engine.flags
+        assert engine.chapter == 4
+        assert engine.get_current_target_room() == "pumpehuset"
+
+        # 4th room in order: "pumpehuset"
+        engine.handle_command("gå til pumpehuset")
+        engine.handle_command("tshark")
+        engine.handle_command("spørg hans om morten")
+        engine.handle_command("firewall workbench")
+        engine.handle_command("monter scalance på din-skinne")
+        engine.handle_command("kobl kabler til scalance")
+        engine.handle_command("firewall rule add --allow-fc 3 --drop-fc 6")
+        assert "chapter-1-done" in engine.flags
+        # All 4 rooms solved -> Chapter 5 (Revisor Kirsten at indgangen)
+        assert engine.chapter == 5
+        assert engine.get_current_target_room() == "indgangen"
+
+        # Analyze all discovered clues and verify true culprit has top suspicion score
+        for c in engine.investigation.get_discovered_clues():
+            engine.handle_command(f"analyser spor {c.id}")
+        top_suspect = max(engine.investigation.suspects.values(), key=lambda s: s.suspicion_score)
+        assert top_suspect.id == culprit, f"Expected {culprit} to have highest suspicion, got {top_suspect.id}"
+
+        # Confront at indgangen and complete NIS2 audit
+        engine.handle_command("gå til indgangen")
+        engine.handle_command("indberet hændelse")
+        engine.handle_command(f"anklag {culprit}")
+        logs.clear()
+        engine.handle_command("fremlæg sagstavle")
+        assert "case-solved" in engine.flags
+        assert "case-solved-lars" in engine.flags
+        engine.handle_command("revisor")
+        assert engine.running is False
+
+    print("  -> Passed.")
+
+
 if __name__ == "__main__":
     test_purdue_and_iec()
     test_sniffer_and_wireshark()
@@ -799,4 +883,5 @@ if __name__ == "__main__":
     test_investigative_chapter_flow_and_finale()
     test_save_and_load_persistence()
     test_interactive_tutorial_and_active_clue_analysis()
+    test_etape2_modular_campaign_variants_and_culprits()
     print("\nALL MECHANICS TESTS PASSED SUCCESSFULLY! [OK]")

@@ -22,7 +22,7 @@ class PumpehusetRoom(BaseRoom):
 
     def get_description(self, engine: Any) -> str:
         flags = getattr(engine, "flags", set())
-        ch = getattr(engine, "chapter", 1)
+        variant = getattr(engine, "room_variants", {}).get("pumpehuset", "A")
         if getattr(engine, "breaker_tripped", False):
             return (
                 "Pumpehuset er badet i en trykkende, unormal stilhed. Pumpe 2 er brat stoppet, "
@@ -40,19 +40,32 @@ class PumpehusetRoom(BaseRoom):
             return (
                 "Pumpehuset summer roligt og harmonisk. Pumpe 2 arbejder stabilt ved 42.0 Bar og 50 Hz. "
                 "På DIN-skinnen blinker SCALANCE S615 routeren betryggende med grønne dioder, mens "
-                "Modbus DPI-inspektionen effektivt filtrerer uautoriserede register-skrivninger fra."
+                "dybde-inspektionen effektivt beskytter frekvensomformeren mod uautoriserede skrivekald."
             )
-        if ch == 1:
+        if variant == "B":
             return (
                 "Pumpehuset ryster under fødderne på dig! Tre gigantiske centrifugalpumper brummer i dybe basfrekvenser, "
                 "men Pumpe 2 skriger med en skærende metallisk lyd. Manometeret på afgangsrøret hamrer febrilsk frem og "
                 "tilbage i den røde zone ved 14.8 bar. Hans McDonald holder sig for ørerne og råber over larmen:\n"
-                "'Kavitationen er ved at pulverisere pumpehjulet! Nogen oversvømmer vores frekvensomformer med Modbus-skrivninger!'"
+                "'Kavitationen er ved at pulverisere pumpehjulet! Nogen misbruger åben SNMPv1 (community: private) og ARP-spoofing til at tvinge VFD'en op på 120 Hz!'"
             )
-        return self.description
+        if variant == "C":
+            return (
+                "Pumpehuset ryster under fødderne på dig! Tre gigantiske centrifugalpumper brummer i dybe basfrekvenser, "
+                "men Pumpe 2 skriger med en skærende metallisk lyd. Manometeret på afgangsrøret hamrer febrilsk frem og "
+                "tilbage i den røde zone ved 14.8 bar. Hans McDonald holder sig for ørerne og råber over larmen:\n"
+                "'Kavitationen er ved at pulverisere pumpehjulet! Nogen er logget ind på VFD'ens ubeskyttede HTTP-webserver (admin/admin) og har låst setpunktet på 120 Hz!'"
+            )
+        return (
+            "Pumpehuset ryster under fødderne på dig! Tre gigantiske centrifugalpumper brummer i dybe basfrekvenser, "
+            "men Pumpe 2 skriger med en skærende metallisk lyd. Manometeret på afgangsrøret hamrer febrilsk frem og "
+            "tilbage i den røde zone ved 14.8 bar. Hans McDonald holder sig for ørerne og råber over larmen:\n"
+            "'Kavitationen er ved at pulverisere pumpehjulet! Nogen oversvømmer vores frekvensomformer med Modbus-skrivninger!'"
+        )
 
     def get_choices(self, engine: Any) -> list[tuple[str, str, str, str]]:
-        ch = getattr(engine, "chapter", 1)
+        flags = getattr(engine, "flags", set())
+        variant = getattr(engine, "room_variants", {}).get("pumpehuset", "A")
         choices: list[tuple[str, str, str, str]] = []
 
         if getattr(engine, "breaker_tripped", False):
@@ -62,7 +75,7 @@ class PumpehusetRoom(BaseRoom):
             return choices
 
         # If user is currently focused on the DIN-rail montage workbench (Sequential 3-step workflow)
-        if getattr(engine, "active_workbench", None) == "vfd_workbench" and ch == 1:
+        if getattr(engine, "active_workbench", None) == "vfd_workbench" and "chapter-1-done" not in flags:
             if not getattr(engine, "vfd_mounted", False):
                 choices.append(("1", "🔌 [Trin 1/3] Fastgør SCALANCE S615 sikkerhedsrouteren på TS35 DIN-skinnen", "monter scalance på din-skinne", "primary"))
                 choices.append(("2", "🚪 Luk arbejdsbænken og vend tilbage til Pumpehuset", "vis rum", "normal"))
@@ -72,23 +85,36 @@ class PumpehusetRoom(BaseRoom):
                 choices.append(("2", "🔀 [Trin 2/3] Forbind VFD til WAN-port (P5) og anlægsnetværk til LAN-port (P1)", "byt om på lan og wan", "normal"))
                 choices.append(("3", "🚪 Luk arbejdsbænken og vend tilbage til Pumpehuset", "vis rum", "normal"))
                 return choices
-            choices.append(("1", "🛡️ [Trin 3/3] Opret regel: 'firewall rule add --allow-fc 3 --drop-fc 6'", "firewall rule add --allow-fc 3 --drop-fc 6", "primary"))
-            choices.append(("2", "🛡️ [Trin 3/3] Opret regel: 'firewall rule add --drop-fc 6'", "firewall rule add --drop-fc 6", "normal"))
+            if variant == "B":
+                choices.append(("1", "🛡️ [Trin 3/3] Spær SNMPv1 Write ('private'), aktivér ARP Inspection (DAI) og tillad SCADA FC 03", "firewall rule add --allow-fc 3 --drop-fc 6", "primary"))
+                choices.append(("2", "🛡️ [Trin 3/3] Blokér al trafik på SCALANCE uden whitelist til SCADA-telemetri", "firewall rule add --drop-fc 6", "normal"))
+            elif variant == "C":
+                choices.append(("1", "🛡️ [Trin 3/3] Spær ukrypteret HTTP Port 80, lås VFD-setpunkt til PLC og tillad SCADA FC 03", "firewall rule add --allow-fc 3 --drop-fc 6", "primary"))
+                choices.append(("2", "🛡️ [Trin 3/3] Blokér al trafik på SCALANCE uden whitelist til SCADA-telemetri", "firewall rule add --drop-fc 6", "normal"))
+            else:
+                choices.append(("1", "🛡️ [Trin 3/3] Opret regel: 'firewall rule add --allow-fc 3 --drop-fc 6'", "firewall rule add --allow-fc 3 --drop-fc 6", "primary"))
+                choices.append(("2", "🛡️ [Trin 3/3] Opret regel: 'firewall rule add --drop-fc 6'", "firewall rule add --drop-fc 6", "normal"))
             choices.append(("3", "🔀 Ændr kabling: Forbind VFD til WAN-port (P5) og anlægsnetværk til LAN-port (P1)", "byt om på lan og wan", "normal"))
             choices.append(("4", "🚪 Luk arbejdsbænken og vend tilbage til Pumpehuset", "vis rum", "normal"))
             return choices
 
-        if ch == 1:
+        if "chapter-1-done" not in flags:
             choices.append(("1", "🔍 Inspicér Pumpe 2 manometer og mekaniske vibrationer", "undersøg pumpe 2", "normal"))
-            choices.append(("2", "📊 Kør tshark og overvåg Modbus TCP-trafik på port 502", "tshark -Y \"modbus\"", "normal"))
+            if variant == "B":
+                choices.append(("2", "📊 Kør tshark og overvåg SNMPv1 (UDP 161) og ARP-trafik i Pumpehuset", "tshark", "normal"))
+            elif variant == "C":
+                choices.append(("2", "📊 Kør tshark og overvåg HTTP-override (Port 80) og Modbus-trafik", "tshark", "normal"))
+            else:
+                choices.append(("2", "📊 Kør tshark og overvåg Modbus TCP-trafik på port 502", "tshark -Y \"modbus\"", "normal"))
             choices.append(("3", "☕ Spørg Hans om nylige servicebesøg på pumperne", "spørg hans om morten", "normal"))
             choices.append(("4", "🔧 Åbn arbejdsbænk for TS35 DIN-skinne & SCALANCE S615 firewall", "firewall workbench", "primary"))
             choices.append(("5", "🛡️ Blokér al TCP port 502 trafik i netværket med en generel regel", "bloker port 502", "normal"))
             choices.append(("6", "⚡ Afbryd forsyningen til frekvensomformeren på hovedafbryderen", "hård nødnedlukning af vfd", "normal"))
             return choices
 
-        # Later chapters
+        # Zone already stabilized -> offer navigation to next active mission room
+        next_room = getattr(engine, "get_current_target_room", lambda: "ventil-oen")()
         choices.append(("1", "🔍 Undersøg Pumpe 2 (stabil drift på 42.0 Bar)", "undersøg pumpe 2", "normal"))
         choices.append(("2", "📊 Kør tshark og inspicér VLAN 10 telemetri", "åbn wireshark", "normal"))
-        choices.append(("3", "💨 Gå til Ventil-øen (L1)", "gå til ventil-oen", "primary"))
+        choices.append(("3", f"➡️ Gå videre til næste aktive zone ({next_room})", f"gå til {next_room}", "primary"))
         return choices

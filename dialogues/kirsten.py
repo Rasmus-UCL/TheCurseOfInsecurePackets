@@ -160,6 +160,7 @@ class KirstenDialogue:
         metrics: Any,
         remarks: list[str],
         prime_suspect_id: str | None,
+        true_culprit_id: str = "lars_ex_tekniker",
     ) -> str:
         """Kirsten's comprehensive regulatory decree evaluating all 4 dimensions and the investigation."""
         lines = []
@@ -167,6 +168,14 @@ class KirstenDialogue:
         sikkerhed = getattr(metrics, "sikkerhed", 50)
         compliance = getattr(metrics, "compliance", 50)
         tillid = getattr(metrics, "tillid", 50)
+
+        culprit_labels = {
+            "lars_ex_tekniker": "Lars Kofoed (Tidligere automationstekniker)",
+            "morten_pumper": "Morten Vestergaard (Hydropump Nordic A/S)",
+            "apt_shadowh2o": "ShadowH2O / DarkVolt Syndikatet (APT)",
+            "kim_operatoer": "Kim Dahl (Intern procesoperatør)",
+        }
+        true_label = culprit_labels.get(true_culprit_id, true_culprit_id)
 
         lines.extend([
             "================================================================================",
@@ -185,12 +194,12 @@ class KirstenDialogue:
             "🔍 EFTERFORSKNINGENS KONKLUSION:",
         ])
 
-        if prime_suspect_id == "lars_ex_tekniker":
-            lines.append("  • Gerningsmand:  Lars Kofoed (Tidligere automationstekniker) -> ✅ KORREKT IDENTIFICERET!")
+        if prime_suspect_id == true_culprit_id:
+            lines.append(f"  • Gerningsmand:  {true_label} -> ✅ KORREKT IDENTIFICERET!")
             lines.append("    Status:        Sagen er overdraget til Rigspolitiets NC3 med beslaglagt bevismateriale.")
         elif prime_suspect_id:
             lines.append(f"  • Gerningsmand:  {prime_suspect_id} -> ⚠️ VILDLEDT ELLER UFULDSTÆNDIG HYPOTESE.")
-            lines.append("    Status:        Den reelle bagmand (Lars Kofoed) undslap i første omgang.")
+            lines.append(f"    Status:        Den reelle bagmand ({true_label}) undslap i første omgang.")
         else:
             lines.append("  • Gerningsmand:  INGEN HOVEDMISTÆNKT UDPEGET.")
             lines.append("    Status:        Efterforskningen mangler formel anklage.")

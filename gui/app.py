@@ -662,7 +662,7 @@ class GameApp(tk.Tk):
     # -------------------------------------------------------------------------
     # GAME LAUNCH & PERSISTENCE (SAVE / LOAD)
     # -------------------------------------------------------------------------
-    def start_new_game(self, tutorial: bool | None = None) -> None:
+    def start_new_game(self, tutorial: bool | None = None, randomize: bool = True) -> None:
         """Start a brand new game session configured from the start screen."""
         name = self.entry_player_name.get().strip() or "Konsulent"
         edu = self.combo_edu_var.get().strip() or "Automationsteknolog"
@@ -676,7 +676,7 @@ class GameApp(tk.Tk):
 
         self.show_gameplay()
         self.terminal.clear()
-        self.engine.start(name, edu, tutorial=use_tutorial)
+        self.engine.start(name, edu, tutorial=use_tutorial, randomize=randomize)
         self.terminal.scroll_to_top()
 
         self.update_objective()
@@ -981,14 +981,7 @@ class GameApp(tk.Tk):
             "el-tavlen": "⚡ El-tavlen (L1/L2)",
             "kontrolrummet": "🖥️ Kontrolrummet (IDMZ)",
         }
-        chapter_target_room = {
-            0: "indgangen",
-            1: "pumpehuset",
-            2: "ventil-oen",
-            3: "el-tavlen",
-            4: "kontrolrummet",
-            5: "indgangen",
-        }.get(self.engine.chapter, "indgangen")
+        chapter_target_room = self.engine.get_current_target_room()
         if getattr(self.engine, "breaker_tripped", False):
             chapter_target_room = "el-tavlen"
 
@@ -1024,7 +1017,7 @@ class GameApp(tk.Tk):
                 2: "Trin 2/5: Sniff netværkstrafik i terminalen ved at taste [1] eller skrive 'tshark'",
                 3: "Trin 3/5: Åbn Sagstavlen ved at klikke på '🕵️ Sagstavle' eller taste [1] ('sagstavle')",
                 4: "Trin 4/5: Klik på det ⚠️ NYE SPOR på tavlen for at analysere det, og vælg en ⭐ Hovedmistænkt!",
-                5: "Trin 5/5: Du er klar! Tast [1] ('afslut tutorial') eller klik på '🚰 Pumpehuset' for at starte missionen!",
+                5: "Trin 5/5: Du er klar! Tast [1] ('afslut tutorial') for at starte missionen!",
             }
             self.objective_banner.configure(
                 text=f"🎓 INTRO-TUTORIAL ({step_goals.get(t_step, 'Følg Hans McDonalds instruktioner')}) — [Timer på pause]",
@@ -1038,9 +1031,9 @@ class GameApp(tk.Tk):
                 bg="#172e42", fg="#dceaf4",
             )
             return
-        obj_text = OBJECTIVES.get(self.engine.chapter, "Gennemfør audit")
+        obj_text = self.engine.get_current_objective_text()
         self.objective_banner.configure(
-            text=f"Aktuelt mål (Kapitel {self.engine.chapter}/5): {obj_text}",
+            text=f"Aktuelt mål: {obj_text}",
             bg="#172e42", fg="#dceaf4",
         )
 

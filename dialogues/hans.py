@@ -230,7 +230,7 @@ class HansDialogue:
         ]
         return random.choice(anecdotes)
 
-    def get_final_verdict_reaction(self, metrics: Any, prime_suspect_id: str | None) -> str:
+    def get_final_verdict_reaction(self, metrics: Any, prime_suspect_id: str | None, true_culprit_id: str = "lars_ex_tekniker") -> str:
         """Hans' concluding speech based on Drift, Tillid, and who was caught."""
         lines = []
         drift = getattr(metrics, "drift", 50)
@@ -271,11 +271,29 @@ class HansDialogue:
                 f"Cybersikkerhed må aldrig blive en krig mod dem, der holder fabrikken kørende.\""
             )
 
-        if prime_suspect_id == "lars_ex_tekniker":
-            lines.append(
-                f"\n🎯 OM GERNINSMANDEN (LARS KOFOED):\n"
-                f"\"Stakkels Lars... Han var sgu en dygtig automationstekniker, men bitterhed og såret stolthed gjorde ham blind. "
-                f"Godt du fik stoppet ham før han sprængte vores rørnetværk i stumper og stykker.\""
-            )
+        if prime_suspect_id == true_culprit_id:
+            culprit_remarks = {
+                "lars_ex_tekniker": (
+                    "🎯 OM GERNINGSMANDEN (LARS KOFOED):\n"
+                    "\"Stakkels Lars... Han var sgu en dygtig automationstekniker, men bitterhed og såret stolthed gjorde ham blind. "
+                    "Godt du fik stoppet ham før han sprængte vores rørnetværk i stumper og stykker.\""
+                ),
+                "morten_pumper": (
+                    "🎯 OM GERNINGSMANDEN (MORTEN VESTERGAARD - HYDROPUMP NORDIC):\n"
+                    "\"Morten fra Hydropump?! Tænk at en betroet leverandør kunne finde på at fremprovokere nedbrud for at sælge en dyr servicekontrakt! "
+                    "Fra i dag kommer ingen eksterne montører ind uden overvåget adgang og NIS2 leverandørkontrol!\""
+                ),
+                "apt_shadowh2o": (
+                    "🎯 OM GERNINGSMANDEN (SHADOWH2O / DARKVOLT SYNDIKATET):\n"
+                    "\"En international APT-gruppe lige midt i vores vandværk... Det løber mig koldt ned ad ryggen! "
+                    "Uden din netværkssegmentering og tshark-analyse var hele kommunens drikkevand blevet taget som gidsel.\""
+                ),
+                "kim_operatoer": (
+                    "🎯 OM GERNINGSMANDEN (KIM DAHL - NATHOLDET):\n"
+                    "\"Kim... Jeg troede bare han var doven med sin 4G-router, men at han direkte kørte bypass-scripts for at skjule en fejl på nattevagten! "
+                    "Det viser hvorfor RBAC og striks adgangskontrol også gælder internt på anlægget.\""
+                ),
+            }
+            lines.append("\n" + culprit_remarks.get(true_culprit_id, culprit_remarks["lars_ex_tekniker"]))
 
         return "\n".join(lines)

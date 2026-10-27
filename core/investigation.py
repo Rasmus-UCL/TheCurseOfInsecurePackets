@@ -14,9 +14,207 @@ class InvestigationManager:
     """Manages forensic clues, suspects, hypotheses and the case board (sagstavle)."""
 
     def __init__(self) -> None:
+        self.true_culprit_id: str = "lars_ex_tekniker"
         self.clues: dict[str, Clue] = self._init_clues()
         self.suspects: dict[str, Suspect] = self._init_suspects()
         self.prime_suspect_id: str | None = None
+
+    def configure_dynamic_case(self, culprit_id: str, room_variants: dict[str, str]) -> None:
+        """Dynamically adapt clue texts, forensic analyses, and suspect links to the active variants and true culprit."""
+        if culprit_id not in self.suspects:
+            culprit_id = "lars_ex_tekniker"
+        self.true_culprit_id = culprit_id
+
+        # Reset base suspicion scores so evidence drives the deduction
+        base_scores = {
+            "lars_ex_tekniker": 25,
+            "morten_pumper": 25,
+            "kim_operatoer": 25,
+            "apt_shadowh2o": 25,
+            "systemisk_fejl": 15,
+        }
+        base_scores[culprit_id] = 30
+        for sid, score in base_scores.items():
+            if sid in self.suspects:
+                self.suspects[sid].suspicion_score = score
+
+        # 1. Pumpehuset variant clues
+        p_var = room_variants.get("pumpehuset", "A")
+        if p_var == "B":
+            self.clues["spor_modbus_flood"].title = "Uautoriseret SNMPv1 SetRequest ('private') & ARP-Spoofing fra 192.168.1.99"
+            self.clues["spor_modbus_flood"].description = (
+                "VFD'ens interne frekvens-OID overskrives til 120 Hz via SNMPv1 community 'private' (UDP 161) under aktiv ARP-poisoning."
+            )
+            self.clues["spor_modbus_flood"].analysis = (
+                "Angriberen misbruger en åben SNMPv1-agent med standard-community 'private' og omdirigerer PLC-trafikken med falske ARP-svar."
+            )
+        elif p_var == "C":
+            self.clues["spor_modbus_flood"].title = "Ukrypteret HTTP Web-API Override (admin/admin) på VFD Port 80"
+            self.clues["spor_modbus_flood"].description = (
+                "HTTP POST /api/vfd/override tvinger SINAMICS G120 i 120 Hz manuel tvangsdrift via standard-login (admin:admin)."
+            )
+            self.clues["spor_modbus_flood"].analysis = (
+                "VFD'ens indbyggede diagnoseserver stod åben på TCP port 80 med fabriks-adgangskode, så feltbus-setpunktet blev kapret."
+            )
+
+        # 2. Ventil-øen variant clues
+        v_var = room_variants.get("ventil-oen", "A")
+        if v_var == "B":
+            self.clues["spor_dcp_storm"].title = "IEEE 802.1Q VLAN Priority-Stripping & Falske LLDP-Nabopakker"
+            self.clues["spor_dcp_storm"].description = (
+                "Kritisk RT-trafik får fjernet sine 802.1Q Priority 6 tags, mens falske LLDP-pakker forvirrer topologien."
+            )
+            self.clues["spor_dcp_storm"].analysis = (
+                "En aktiv netværks-tap manipulerer Layer-2 headers direkte i ventil-klemkassen for at fremprovokere pakketab og ventil-svingninger."
+            )
+            self.clues["spor_sort_boks"].title = "Skjult Aktiv LAN-Tap & Packet-Injector i Ventil-Klemkassen"
+            self.clues["spor_sort_boks"].description = (
+                "En lille sort mikro-tap koblet ind mellem ventil-øens klemrække og den uadministrerede D-Link switch."
+            )
+        elif v_var == "C":
+            self.clues["spor_dcp_storm"].title = "Ukrypteret MQTT Kommandostorm (Port 1883) mod Smart-Ventiler"
+            self.clues["spor_dcp_storm"].description = (
+                "En strøm af uautentificerede MQTT PUBLISH 'nordic/valves/all/set=oscillate' tvinger ventilerne til at klapre."
+            )
+            self.clues["spor_dcp_storm"].analysis = (
+                "IIoT-sidekanalen på ventil-øen kørte ukrypteret MQTT uden TLS eller broker-autentificering."
+            )
+            self.clues["spor_sort_boks"].title = "Uautoriseret ESP32/MQTT-Bro skjult under kabelbakken"
+            self.clues["spor_sort_boks"].description = (
+                "Et hjemmebygget ESP32-modul med Ethernet-shield sat direkte i den åbne D-Link switch under kabelbakken."
+            )
+
+        # 3. El-tavlen variant clues
+        e_var = room_variants.get("el-tavlen", "A")
+        if e_var == "B":
+            self.clues["spor_plc_stop_buffer"].title = "S7-1516F Diagnostic Buffer: 'F-Safety Watchdog Timeout i OB35 (0x75E1)'"
+            self.clues["spor_plc_stop_buffer"].description = (
+                "Fail-Safe OB35 cyklustiden er blevet manipuleret til 500 ms (grænse: 100 ms), hvilket udløste et F-CPU Safety-STOP."
+            )
+            self.clues["spor_plc_stop_buffer"].analysis = (
+                "F-Safety adgangskoden var deaktiveret, hvilket tillod fjernændring af sikkerheds-watchdoggen uden hardware-nøgle."
+            )
+        elif e_var == "C":
+            self.clues["spor_plc_stop_buffer"].title = "S7-1500 Diagnostic Buffer: 'NTP Time-Jump til 1970 & TLS Certifikat-Fejl'"
+            self.clues["spor_plc_stop_buffer"].description = (
+                "Uautentificerede NTP-pakker (UDP 123) har nulstillet PLC-uret til 1970, så X.509/TLS-sikkerhedsforbindelsen gik i STOP."
+            )
+            self.clues["spor_plc_stop_buffer"].analysis = (
+                "PLC'en accepterede usigneret NTP-tidssynkronisering fra enhver vært på det flade OT-netværk."
+            )
+
+        # 4. Kontrolrummet variant clues
+        k_var = room_variants.get("kontrolrummet", "A")
+        if k_var == "B":
+            self.clues["spor_4g_dongle"].title = "Skjult Wi-Fi Access Point under gulvet ved Patchpanelet"
+            self.clues["spor_4g_dongle"].description = (
+                "Et kompakt dual-band Wi-Fi AP gemt under det hævede gulv i kontrolrummet, koblet direkte i SCADA-switchen."
+            )
+            self.clues["spor_4g_dongle"].analysis = (
+                "Giver trådløs adgang fra parkeringspladsen uden om perimeter-firewallen direke ind i Level 2/3."
+            )
+            self.clues["spor_opc_leak"].title = "Kompromitteret Leverandør-Certifikat & Åben OPC UA SecurityPolicy"
+            self.clues["spor_opc_leak"].description = (
+                "Et stjålet/udløbet X.509 leverandørcertifikat samt tilladt 'SecurityMode: None' giver fuld læse-/skriveadgang i SCADA."
+            )
+        elif k_var == "C":
+            self.clues["spor_4g_dongle"].title = "Uautoriseret Mini-VPN/RDP Tunnel-Boks bag IDMZ-Patchpanelet"
+            self.clues["spor_4g_dongle"].description = (
+                "En lille hardware-tunnelboks der viderestiller TCP port 3389 (Remote Desktop) direkte til SCADA-operatørstationen."
+            )
+            self.clues["spor_4g_dongle"].analysis = (
+                "Omgår IDMZ-segmenteringen og eksponerer SCADA HMI-sessionen uden Multi-Factor Authentication (NIS2 Art. 21.2.j)."
+            )
+
+        # 5. Culprit-specific forensic signatures & clue associations
+        if culprit_id == "lars_ex_tekniker":
+            self.clues["spor_usb_backup"].title = "USB-stik mærket 'LARS - TIA V16 BACKUP'"
+            self.clues["spor_usb_backup"].description = (
+                "En efterladt USB-nøgle i el-tavlen med Lars' initialer og et projektarkiv uden adgangskode."
+            )
+            self.clues["spor_usb_backup"].analysis = (
+                "Metadata i projektfilen viser, at brugeren 'LKO_ENG' kompilerede angrebs-scriptet med eksakt kendskab til værkets DB-struktur."
+            )
+            self.clues["spor_usb_backup"].associated_suspects = ["lars_ex_tekniker"]
+            self.clues["spor_sort_boks"].associated_suspects = ["lars_ex_tekniker"]
+            self.clues["spor_mac_oui"].associated_suspects = ["lars_ex_tekniker"]
+            self.clues["spor_modbus_flood"].associated_suspects = ["lars_ex_tekniker", "apt_shadowh2o"]
+            self.clues["spor_dcp_storm"].associated_suspects = ["lars_ex_tekniker"]
+            self.clues["spor_plc_stop_buffer"].associated_suspects = ["lars_ex_tekniker", "systemisk_fejl"]
+
+        elif culprit_id == "morten_pumper":
+            self.clues["spor_morten_rapport"].title = "Hans' vidneudsagn & Service-log: 'Morten fra Hydropump var alene i alle 4 zoner tirsdag'"
+            self.clues["spor_morten_rapport"].description = (
+                "Adgangsloggen viser, at Morten Vestergaard lånte hovednøglen tirsdag og besøgte både pumpehus, ventil-ø og el-tavle."
+            )
+            self.clues["spor_morten_rapport"].analysis = (
+                "PÅFALDENDE: Dagen efter sendte Hydropump Nordic A/S et tilbud på en 'Akut 24/7 Total-Servicekontrakt' til 1,8 mio. kr.!"
+            )
+            self.clues["spor_morten_rapport"].associated_suspects = ["morten_pumper"]
+            self.clues["spor_usb_backup"].title = "USB-stik mærket 'HYDROPUMP NORDIC - SERVICE DIAG V4'"
+            self.clues["spor_usb_backup"].description = (
+                "En rød leverandør-USB efterladt i el-tavlen med Mortens kalibreringsværktøj og et skjult stress-test script."
+            )
+            self.clues["spor_usb_backup"].analysis = (
+                "Scriptet 'pump_stress_induce.py' er signeret af brugerkontoen 'mve@hydropump.dk' og programmeret til at udløse nedbrud fredag."
+            )
+            self.clues["spor_usb_backup"].associated_suspects = ["morten_pumper"]
+            self.clues["spor_sort_boks"].description += " På undersiden sidder et inventarmærke fra 'Hydropump Field Test Lab #04'."
+            self.clues["spor_sort_boks"].associated_suspects = ["morten_pumper"]
+            self.clues["spor_mac_oui"].associated_suspects = ["morten_pumper"]
+            self.clues["spor_modbus_flood"].associated_suspects = ["morten_pumper"]
+            self.clues["spor_dcp_storm"].associated_suspects = ["morten_pumper"]
+            self.clues["spor_plc_stop_buffer"].associated_suspects = ["morten_pumper"]
+            self.clues["spor_4g_dongle"].associated_suspects = ["morten_pumper", "kim_operatoer"]
+
+        elif culprit_id == "apt_shadowh2o":
+            self.clues["spor_usb_backup"].title = "Kryptografisk Ransomware-Staging Note ('SHADOWH2O_README.TXT') i El-tavlen"
+            self.clues["spor_usb_backup"].description = (
+                "I PLC'ens hukommelseskort-slot ligger en droppet payload-fil med C2-signaturer fra trusselsgruppen ShadowH2O."
+            )
+            self.clues["spor_usb_backup"].analysis = (
+                "C2-serverens TLS-fingerprint matcher Europol-advarslen mod APT-gruppen ShadowH2O, som angriber nordiske vandværker."
+            )
+            self.clues["spor_usb_backup"].associated_suspects = ["apt_shadowh2o"]
+            self.clues["spor_mac_oui"].title = "Spoofed MAC & C2-Beacon til Ekstern Tor-Relay (ShadowH2O)"
+            self.clues["spor_mac_oui"].description = (
+                "Netværksopsamlingen viser krypterede C2-heartbeats hvert 30. sekund gennem den uautoriserede fjernadgang i kontrolrummet."
+            )
+            self.clues["spor_mac_oui"].analysis = (
+                "Angriberen er kommet ind udefra via den usikrede fjernadgang i kontrolrummet og har pivoteret direkte ned til feltniveauet!"
+            )
+            self.clues["spor_mac_oui"].associated_suspects = ["apt_shadowh2o"]
+            self.clues["spor_sort_boks"].associated_suspects = ["apt_shadowh2o"]
+            self.clues["spor_modbus_flood"].associated_suspects = ["apt_shadowh2o"]
+            self.clues["spor_manometer_rystelser"].associated_suspects = ["apt_shadowh2o"]
+            self.clues["spor_dcp_storm"].associated_suspects = ["apt_shadowh2o"]
+            self.clues["spor_plc_stop_buffer"].associated_suspects = ["apt_shadowh2o"]
+            self.clues["spor_opc_leak"].associated_suspects = ["apt_shadowh2o"]
+
+        elif culprit_id == "kim_operatoer":
+            self.clues["spor_usb_backup"].title = "USB-stik mærket 'KIM D. - NATTEVAGT AUTO-BYPASS SCRIPTS'"
+            self.clues["spor_usb_backup"].description = (
+                "En personlig USB-nøgle i el-tavlen med hjemmelavede Python-scripts til at tvinge ventiler og pumper uden om SCADA-alarmerne."
+            )
+            self.clues["spor_usb_backup"].analysis = (
+                "Kim forsøgte at skjule en fejlbetjening fra torsdag nat ved at overstyre PLC'en og VFD'en med uautoriserede bypass-scripts!"
+            )
+            self.clues["spor_usb_backup"].associated_suspects = ["kim_operatoer"]
+            self.clues["spor_kim_nattevagt"].title = "SCADA & Terminal-Log: 'Bruger KIM_D kørte override_all_zones.sh kl. 03:14'"
+            self.clues["spor_kim_nattevagt"].description = (
+                "Kommandohistorikken viser, at Kim Dahl fra sin nattevagt-session selv satte den sorte boks op og udløste overstyringen."
+            )
+            self.clues["spor_kim_nattevagt"].analysis = (
+                "Entydigt digitalt spor: Kim opsatte ikke kun ulovlig fjernadgang, men kørte også de fatale bypass-kommandoer for at dække over en tørlægning."
+            )
+            self.clues["spor_kim_nattevagt"].associated_suspects = ["kim_operatoer"]
+            self.clues["spor_sort_boks"].associated_suspects = ["kim_operatoer"]
+            self.clues["spor_mac_oui"].associated_suspects = ["kim_operatoer"]
+            self.clues["spor_modbus_flood"].associated_suspects = ["kim_operatoer"]
+            self.clues["spor_dcp_storm"].associated_suspects = ["kim_operatoer"]
+            self.clues["spor_plc_stop_buffer"].associated_suspects = ["kim_operatoer"]
+            self.clues["spor_4g_dongle"].associated_suspects = ["kim_operatoer"]
+            self.clues["spor_opc_leak"].associated_suspects = ["kim_operatoer"]
 
     def _init_suspects(self) -> dict[str, Suspect]:
         return {

@@ -116,9 +116,10 @@ class IndgangenRoom(BaseRoom):
                     choices_step4.append(("1", "✅ Gå videre til sidste trin af tutorialen", "analyser spor spor_morten_rapport", "success"))
                 choices_step4.append(("3", "⏭️ Spring intro-tutorialen over og start Kapitel 1 direkte", "spring tutorial over", "normal"))
                 return choices_step4
+            first_zone = getattr(engine, "get_current_target_room", lambda: "pumpehuset")()
             return [
                 ("1", "🚀 [Tutorial Trin 5/5]: Afslut tutorial og start Kapitel 1 (Gå i krig med missionen!)", "afslut tutorial", "success"),
-                ("2", "👉 Gå direkte ind i Pumpehuset (Starter Kapitel 1 & akut pumpe-alarm)", "gå til pumpehuset", "primary"),
+                ("2", f"👉 Gå direkte ind i første alarm-zone ({first_zone})", f"gå til {first_zone}", "primary"),
             ]
 
         ch = getattr(engine, "chapter", 1)
@@ -144,7 +145,8 @@ class IndgangenRoom(BaseRoom):
                 choices.append(("2", "🏠 Afslut missionen og vend tilbage til Hovedmenuen", "hovedmenu", "primary"))
             return choices
 
-        choices.append(("1", "🚰 Gå til Pumpehuset i produktionshallen (Start indsats)", "gå til pumpehuset", "primary"))
+        first_zone = getattr(engine, "get_current_target_room", lambda: "pumpehuset")()
+        choices.append(("1", f"🚨 Gå til aktiv alarm-zone ({first_zone}) og start indsatsen", f"gå til {first_zone}", "primary"))
         choices.append(("2", "📜 Undersøg emaljeskiltet med Purdue-zonemodellen", "undersøg skilt", "normal"))
         choices.append(("3", "🚶 Tag en teknisk rundtur med Hans McDonald", "rundtur", "normal"))
         choices.append(("4", "☕ Tal med Hans McDonald om anlæggets tilstand", "tal med hans", "normal"))

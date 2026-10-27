@@ -15,6 +15,8 @@ class TSharkEngine:
 
     def get_packets_for_zone(self, room: str, engine: Any = None) -> list[dict[str, Any]]:
         flags = getattr(engine, "flags", set()) if engine else set()
+        room_variants = getattr(engine, "room_variants", {}) if engine else {}
+        variant = room_variants.get(room, "A")
         scada_blind = getattr(engine, "scada_blind", False) if engine else False
         c1_done = "chapter-1-done" in flags
         c2_done = "chapter-2-done" in flags
@@ -112,6 +114,61 @@ class TSharkEngine:
                     },
                 ]
             else:
+                if variant == "B":
+                    return [
+                        {
+                            "no": "001", "time": "0.000000", "src": "10.20.1.77", "dst": "ff:ff:ff:ff:ff:ff",
+                            "proto": "ARP", "func": "Spoof", "info": "ARP Reply: 10.20.1.1 (PLC) is at dc:a6:32:99:88:77 [ARP POISONING]",
+                            "dissection": [
+                                "Frame 1: 42 bytes på kablet (VLAN 10)",
+                                "ARP Cache Poisoning omdirigerer VFD-trafikken væk fra PLC'en.",
+                            ],
+                        },
+                        {
+                            "no": "002", "time": "0.004120", "src": "10.20.1.77", "dst": "10.20.1.20",
+                            "proto": "SNMPv1", "func": "Set", "info": "SetRequest community='private' OID 1.3.6.1.4.1.4329.2.1 = 120Hz [SABOTAGE]",
+                            "dissection": [
+                                "Frame 2: 88 bytes på kablet (UDP Port 161)",
+                                "Simple Network Management Protocol v1 | Community: 'private' (Klartekst standardkode!)",
+                                "PDU Type: SetRequest | OID: 1.3.6.1.4.1.4329.2.1 (SINAMICS MaxFrequency) = 1200 (120.0 Hz / 146.5 Bar)",
+                                "ADVARSEL: Åben SNMPv1 Write-adgang tillader fjern-overstyring af VFD-frekvens!",
+                            ],
+                        },
+                        {
+                            "no": "003", "time": "0.012540", "src": "10.20.1.5", "dst": "10.20.1.20",
+                            "proto": "Modbus", "func": "3", "info": "Query: Read Holding Registers (FC 03) [SCADA Telemetri]",
+                            "dissection": [
+                                "Frame 3: Legitim SCADA-aflæsning på Port 502.",
+                            ],
+                        },
+                    ]
+                elif variant == "C":
+                    return [
+                        {
+                            "no": "001", "time": "0.000000", "src": "10.20.1.77", "dst": "10.20.1.20",
+                            "proto": "HTTP", "func": "POST", "info": "POST /api/vfd/override HTTP/1.1 (Basic Auth: admin:admin) [120 Hz TVANGSDRIFT]",
+                            "dissection": [
+                                "Frame 1: 214 bytes på kablet (TCP Port 80)",
+                                "Hypertext Transfer Protocol | Authorization: Basic YWRtaW46YWRtaW4= ('admin:admin')",
+                                "Payload JSON: {\"mode\": \"manual_override\", \"freq_hz\": 120.0, \"pressure_bar\": 146.5}",
+                                "ADVARSEL: Ubeskyttet HTTP-webserver på VFD tillader kapring af setpunkt-kilden!",
+                            ],
+                        },
+                        {
+                            "no": "002", "time": "0.002100", "src": "10.20.1.20", "dst": "10.20.1.77",
+                            "proto": "HTTP", "func": "200", "info": "HTTP/1.1 200 OK (Setpoint Override Active: 146.5 Bar)",
+                            "dissection": [
+                                "Frame 2: VFD accepterer HTTP-overstyring og ignorerer normal PLC-styring.",
+                            ],
+                        },
+                        {
+                            "no": "003", "time": "0.012540", "src": "10.20.1.5", "dst": "10.20.1.20",
+                            "proto": "Modbus", "func": "3", "info": "Query: Read Holding Registers (FC 03) [SCADA Telemetri]",
+                            "dissection": [
+                                "Frame 3: Legitim SCADA-aflæsning på Port 502.",
+                            ],
+                        },
+                    ]
                 return [
                     {
                         "no": "001", "time": "0.000000", "src": "10.20.1.5", "dst": "10.20.1.20",
@@ -181,7 +238,7 @@ class TSharkEngine:
                 return [
                     {
                         "no": "001", "time": "0.000000", "src": "00:0e:8c:aa:11:01", "dst": "00:0e:8c:bb:22:02",
-                        "proto": "PROFINET", "func": "RT", "info": "PROFINET Real-Time Cyclic I/O (DCP storm ophørt)",
+                        "proto": "PROFINET", "func": "RT", "info": "PROFINET Real-Time Cyclic I/O (Sabotage-enhed fjernet)",
                         "dissection": [
                             "Frame 1: Layer 2 PROFINET RT (IEEE 802.1Q VLAN 20 Priority 6)",
                             "Rogue implantat fjernet. Netværket afventer montering af managed switch.",
@@ -189,6 +246,45 @@ class TSharkEngine:
                     },
                 ]
             else:
+                if variant == "B":
+                    return [
+                        {
+                            "no": "001", "time": "0.000000", "src": "b8:27:eb:d4:11:22", "dst": "01:80:c2:00:00:0e",
+                            "proto": "LLDP", "func": "Spoof", "info": "LLDP Chassis ID='rogue-tap' Port='gi0/1' [TOPOLOGI-FORGIFTNING]",
+                            "dissection": [
+                                "Frame 1: 92 bytes på kablet (VLAN 20)",
+                                "Ethernet II, Src: b8:27:eb:d4:11:22 (Aktiv LAN-Tap i klemkasse)",
+                                "Link Layer Discovery Protocol: Udsender falske nabotabeller og stripper IEEE 802.1Q QoS Priority 6 tags!",
+                            ],
+                        },
+                        {
+                            "no": "002", "time": "0.000510", "src": "00:0e:8c:aa:11:01", "dst": "00:0e:8c:bb:22:02",
+                            "proto": "PROFINET", "func": "RT", "info": "PROFINET RT Cyclic I/O [802.1Q PRIORITY TAG STRIPPED -> JITTER!]",
+                            "dissection": [
+                                "Frame 2: PROFINET RT pakke nedgraderet til Best-Effort (Priority 0) af aktiv LAN-tap.",
+                            ],
+                        },
+                    ]
+                elif variant == "C":
+                    return [
+                        {
+                            "no": "001", "time": "0.000000", "src": "10.20.2.99", "dst": "10.20.2.50",
+                            "proto": "MQTT", "func": "Publish", "info": "PUBLISH Topic='nordic/valves/all/set' Payload='OSCILLATE_MAX' [PORT 1883]",
+                            "dissection": [
+                                "Frame 1: 78 bytes på kablet (TCP Port 1883 - Ukrypteret MQTT)",
+                                "Ethernet II, Src: b8:27:eb:d4:11:22 (ESP32/Pi MQTT-bro under kabelbakke)",
+                                "MQ Telemetry Transport Protocol | Ingen TLS | Ingen Username/Password",
+                                "Topic: nordic/valves/all/set -> Tvinger magnetventilerne i voldsomme svingninger!",
+                            ],
+                        },
+                        {
+                            "no": "002", "time": "0.000420", "src": "00:0e:8c:aa:11:01", "dst": "00:0e:8c:bb:22:02",
+                            "proto": "PROFINET", "func": "RT", "info": "PROFINET Real-Time Cyclic I/O (Overbelastet af MQTT-storm)",
+                            "dissection": [
+                                "Frame 2: Den uadministrerede D-Link switch kan ikke adskille IIoT-trafik fra PROFINET RT.",
+                            ],
+                        },
+                    ]
                 return [
                     {
                         "no": "001", "time": "0.000000", "src": "00:0e:8c:aa:11:01", "dst": "00:0e:8c:bb:22:02",
@@ -248,6 +344,43 @@ class TSharkEngine:
                     },
                 ]
             else:
+                if variant == "B":
+                    return [
+                        {
+                            "no": "001", "time": "0.000000", "src": "10.20.1.77", "dst": "10.20.3.1",
+                            "proto": "S7comm", "func": "Download", "info": "Modify OB35 Cyclic Interrupt (Watchdog = 500ms > Max 100ms) [F-SAFETY SABOTAGE]",
+                            "dissection": [
+                                "Frame 1: Siemens S7comm til Fail-Safe CPU 1516F på Port 102",
+                                "Angriberen ændrer OB35 cyklustid uden Safety-adgangskode.",
+                                "Konsekvens: F-Safety Watchdog udløser fejlkode 0x75E1 og tvinger PLC i Safety-STOP!",
+                            ],
+                        },
+                        {
+                            "no": "002", "time": "0.001850", "src": "10.20.3.1", "dst": "10.20.1.77",
+                            "proto": "S7comm", "func": "Error", "info": "Diagnostic Event 0x75E1: Fail-Safe Watchdog Time Exceeded (CPU STOP)",
+                            "dissection": [
+                                "Frame 2: CPU 1516F går i STOP for at beskytte mod ukontrolleret proces.",
+                            ],
+                        },
+                    ]
+                elif variant == "C":
+                    return [
+                        {
+                            "no": "001", "time": "0.000000", "src": "10.20.1.77", "dst": "10.20.3.1",
+                            "proto": "NTP", "func": "Spoof", "info": "NTP Server Response: Stratum 1 | Time='1970-01-01 00:00:01 UTC' [TIME-SPOOFING]",
+                            "dissection": [
+                                "Frame 1: Network Time Protocol (UDP Port 123) uden SHA-256 autentificering",
+                                "Angriberen tvinger S7-1500 CPU'ens systemur tilbage til år 1970.",
+                            ],
+                        },
+                        {
+                            "no": "002", "time": "0.001500", "src": "10.20.3.1", "dst": "10.20.3.15",
+                            "proto": "S7comm", "func": "Error", "info": "TLS Certificate Not Yet Valid (Clock Desync) -> Safety-CPU STOP (0x8104)",
+                            "dissection": [
+                                "Frame 2: PLC'ens X.509 certifikater fejler tidsvalidering pga. NTP-spoofing, og CPU'en går i STOP!",
+                            ],
+                        },
+                    ]
                 return [
                     {
                         "no": "001", "time": "0.000000", "src": "10.20.3.15", "dst": "10.20.3.1",
@@ -292,6 +425,42 @@ class TSharkEngine:
                     },
                 ]
             else:
+                if variant == "B":
+                    return [
+                        {
+                            "no": "001", "time": "0.000000", "src": "192.168.88.10", "dst": "10.20.2.10",
+                            "proto": "OPC.TCP", "func": "Open", "info": "OpenSecureChannel: Stjålet Leverandør-Certifikat + SecurityPolicy='None' [DATA-LÆK]",
+                            "dissection": [
+                                "Frame 1: OPC UA på Port 4840 via skjult Wi-Fi Access Point under gulvet",
+                                "Klienten bruger et udløbet leverandørcertifikat og SecurityPolicy=None.",
+                            ],
+                        },
+                        {
+                            "no": "002", "time": "0.003500", "src": "192.168.88.10", "dst": "10.20.2.10",
+                            "proto": "OPC.TCP", "func": "Session", "info": "CreateSession: UserTokenType=Anonymous [INGEN ADGANGSKONTROL]",
+                            "dissection": [
+                                "Frame 2: Anonym adgang eksporterer samtlige tags fra vandværket over Wi-Fi!",
+                            ],
+                        },
+                    ]
+                elif variant == "C":
+                    return [
+                        {
+                            "no": "001", "time": "0.000000", "src": "185.220.101.5", "dst": "10.20.2.10",
+                            "proto": "RDP", "func": "Connect", "info": "TCP Port 3389 Remote Desktop Session (Ingen MFA!) + OPC UA SecurityPolicy='None'",
+                            "dissection": [
+                                "Frame 1: Indgående RDP-forbindelse via uautoriseret tunnel-boks ved IDMZ-patchpanelet",
+                                "Ingen Multi-Factor Authentication (NIS2 Art. 21.2.j overtrædelse) og ukrypteret OPC UA på Port 4840.",
+                            ],
+                        },
+                        {
+                            "no": "002", "time": "0.003500", "src": "10.20.4.10", "dst": "10.20.2.10",
+                            "proto": "OPC.TCP", "func": "Session", "info": "CreateSession: UserTokenType=Anonymous [INGEN ADGANGSKONTROL]",
+                            "dissection": [
+                                "Frame 2: OPC UA tillader samtidig anonym læsning af procesværdier.",
+                            ],
+                        },
+                    ]
                 return [
                     {
                         "no": "001", "time": "0.000000", "src": "10.20.4.10", "dst": "10.20.2.10",

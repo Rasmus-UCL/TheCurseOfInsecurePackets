@@ -81,9 +81,16 @@ class GameEngine:
         self.hans = HansDialogue()
         self.kirsten = KirstenDialogue()
 
-        # Narrative 4-Metric System & Case Board (Etape 1 Redesign)
+        # Narrative 4-Metric System & Case Board (Etape 1 & Etape 2 Redesign)
         self.metrics = MetricValues()
         self.investigation = InvestigationManager()
+        self.mission_order: list[str] = ["pumpehuset", "ventil-oen", "el-tavlen", "kontrolrummet"]
+        self.room_variants: dict[str, str] = {
+            "pumpehuset": "A",
+            "ventil-oen": "A",
+            "el-tavlen": "A",
+            "kontrolrummet": "A",
+        }
 
         # Instantiated Devices
         self.vfd = VFDDevice()
@@ -91,6 +98,89 @@ class GameEngine:
         self.plc = PLCDevice()
         self.opcua = OpcUaDevice()
         self.rogue_pi = RoguePiDevice()
+
+    def randomize_campaign(self, seed: int | None = None) -> None:
+        """Randomize mission order (keeping Kirsten/indgangen last), room attack variations (A/B/C), and true culprit."""
+        rng = random.Random(seed) if seed is not None else random
+        zones = ["pumpehuset", "ventil-oen", "el-tavlen", "kontrolrummet"]
+        rng.shuffle(zones)
+        self.mission_order = zones
+        self.room_variants = {
+            z: rng.choice(["A", "B", "C"])
+            for z in ["pumpehuset", "ventil-oen", "el-tavlen", "kontrolrummet"]
+        }
+        culprit = rng.choice(["lars_ex_tekniker", "morten_pumper", "apt_shadowh2o", "kim_operatoer"])
+        self.investigation.configure_dynamic_case(culprit, self.room_variants)
+        self._cached_choices = None
+        self._cached_state_key = None
+
+    def get_current_target_room(self) -> str:
+        """Return the active mission zone according to mission_order (with indgangen for tutorial and Chapter 5)."""
+        if self.tutorial_active or self.chapter >= 5:
+            return "indgangen"
+        done_map = {
+            "pumpehuset": "chapter-1-done",
+            "ventil-oen": "chapter-2-done",
+            "el-tavlen": "chapter-3-done",
+            "kontrolrummet": "chapter-4-done",
+        }
+        for z in self.mission_order:
+            if done_map.get(z, "") not in self.flags:
+                return z
+        return "indgangen"
+
+    def get_current_objective_text(self) -> str:
+        """Return a dynamic objective string matching the active target room and its attack variant."""
+        if self.tutorial_active:
+            return f"TUTORIAL (Trin {self.tutorial_step}/5): Gennemfør Hans' udstyrstjek ved Hovedindgangen (eller klik 'Spring over')."
+        if self.chapter >= 5:
+            return OBJECTIVES.get(5, "Gå til Hovedindgangen, fremlæg sagstavlen og gennemfør NIS2-audit.")
+        target = self.get_current_target_room()
+        var = self.room_variants.get(target, "A")
+        room_objectives = {
+            ("pumpehuset", "A"): f"Kapitel {self.chapter}/5 [Pumpehuset]: Stop Modbus FC06 angrebet på Pumpe 2 med SCALANCE S615 DPI.",
+            ("pumpehuset", "B"): f"Kapitel {self.chapter}/5 [Pumpehuset]: Stop SNMPv1 ('private') & ARP-spoofing mod VFD'en med SCALANCE S615.",
+            ("pumpehuset", "C"): f"Kapitel {self.chapter}/5 [Pumpehuset]: Luk ubeskyttet HTTP Web-API override (Port 80) på VFD'en med SCALANCE S615.",
+            ("ventil-oen", "A"): f"Kapitel {self.chapter}/5 [Ventil-øen]: Find Rogue Pi under kabelbakken (Faraday-pose) og monter SCALANCE MRP-switch.",
+            ("ventil-oen", "B"): f"Kapitel {self.chapter}/5 [Ventil-øen]: Fjern aktiv LAN-tap ved klemkassen (Faraday-pose) og monter SCALANCE switch.",
+            ("ventil-oen", "C"): f"Kapitel {self.chapter}/5 [Ventil-øen]: Fjern uautoriseret MQTT-bro under kabelbakken (Faraday-pose) og monter SCALANCE switch.",
+            ("el-tavlen", "A"): f"Kapitel {self.chapter}/5 [El-tavlen]: Tag offline USB-backup af S7-1500 PLC, deaktiver PUT/GET og sæt Protection Level 3.",
+            ("el-tavlen", "B"): f"Kapitel {self.chapter}/5 [El-tavlen]: Tag offline USB-backup af S7-1516F, gendan OB35 F-Safety Watchdog og sæt Level 3.",
+            ("el-tavlen", "C"): f"Kapitel {self.chapter}/5 [El-tavlen]: Tag offline USB-backup af S7-1500, lås NTP-tidsserver (SHA-256) og sæt Level 3.",
+            ("kontrolrummet", "A"): f"Kapitel {self.chapter}/5 [Kontrolrummet]: Fjern 4G-router og hærd OPC UA (Trusted Cert, Basic256Sha256, luk Anonymous).",
+            ("kontrolrummet", "B"): f"Kapitel {self.chapter}/5 [Kontrolrummet]: Fjern skjult Wi-Fi AP under gulvet, spær stjålet certifikat og hærd OPC UA.",
+            ("kontrolrummet", "C"): f"Kapitel {self.chapter}/5 [Kontrolrummet]: Fjern ulovlig RDP-tunnelboks ved patchpanelet, kræv MFA og hærd OPC UA.",
+        }
+        return room_objectives.get((target, var), OBJECTIVES.get(self.chapter, "Sikre anlæggets zoner"))
+
+    def _advance_campaign_progress(self, solved_room_key: str, solved_zone_title: str) -> None:
+        """Advance chapter and announce next mission target in mission_order (or Chapter 5 Finale when all 4 zones are done)."""
+        all_done = all(
+            f in self.flags
+            for f in ("chapter-1-done", "chapter-2-done", "chapter-3-done", "chapter-4-done")
+        )
+        if all_done or (solved_room_key == self.mission_order[-1] and self.chapter == 4):
+            self.chapter = 5
+            self.emit("\n🎉 [SEJR] SAMTLIGE ANLÆGSZONER ER SIKRET! Kirsten fra Cybersikkerhedstilsynet er ankommet ved Hovedindgangen.")
+            self.emit("Gå til Hovedindgangen og fremlæg Sagstavlen for at udpege synderen og bestå den officielle NIS2-audit!")
+            self.emit_investigation_checkpoint(solved_zone_title)
+            return
+
+        solved_count = sum(
+            1 for f in ("chapter-1-done", "chapter-2-done", "chapter-3-done", "chapter-4-done")
+            if f in self.flags
+        )
+        self.chapter = min(4, max(self.chapter + 1, solved_count + 1))
+        next_room = self.get_current_target_room()
+        radio_calls = {
+            "pumpehuset": "'Skynd dig til PUMPEHUSET! Pumpe 2 skriger i lejerne, og manometeret er i rød zone!'",
+            "ventil-oen": "'Skynd dig til VENTIL-ØEN! Ventilerne hamrer løs i et voldsomt netværkskaos!'",
+            "el-tavlen": "'Skynd dig til HOVED-EL-TAVLEN! S7-1500 Sikkerheds-PLC'en er gået i rød STOP-mode!'",
+            "kontrolrummet": "'Skynd dig til KONTROLRUMMET! Vores SCADA-server lækker data gennem en ulovlig bagdør i IDMZ!'",
+        }
+        self.emit(f"\n[MÅL] NYT MÅL: Kapitel {self.chapter} aktiveret! Hans kalder over radioen:")
+        self.emit(radio_calls.get(next_room, f"'Gå videre til {next_room}!'"))
+        self.emit_investigation_checkpoint(solved_zone_title)
 
     def emit(self, message: str) -> None:
         try:
@@ -139,9 +229,15 @@ class GameEngine:
     # -------------------------------------------------------------------------
     # LIFECYCLE, TUTORIAL & TIMERS
     # -------------------------------------------------------------------------
-    def start(self, name: str, education: str, tutorial: bool = False) -> None:
+    def start(self, name: str, education: str, tutorial: bool = False, randomize: bool = False) -> None:
         self.player.name = name or "Lead OT-Konsulent"
         self.player.education = education or "Automation & IT-Teknologi"
+
+        if randomize:
+            self.randomize_campaign()
+
+        first_room = self.get_current_target_room() if not tutorial else "indgangen"
+        first_title = ALL_ROOMS[self.mission_order[0]].title
 
         self.emit(
             f"📋 [MISSIONS-BRIEFING — NORDIC H2O UTILITY]\n"
@@ -167,8 +263,8 @@ class GameEngine:
         self.tutorial_step = 0
         self.chapter = 1
         self.emit(
-            "Hans McDonald, senior driftstekniker: \"Velkommen om bord! Tag gerne en hurtig 'Rundtur' her ved "
-            "Hovedindgangen, eller gå direkte til Pumpehuset (L1) for at stoppe det første angreb.\""
+            f"Hans McDonald, senior driftstekniker: \"Velkommen om bord! Tag gerne en hurtig 'Rundtur' her ved "
+            f"Hovedindgangen, eller gå direkte til {first_title} ({self.mission_order[0]}) for at stoppe det første angreb.\""
         )
 
         self.describe_room()
@@ -191,10 +287,12 @@ class GameEngine:
             self.emit("\n🎉 [UDSTYRSTJEK & INTRO-TUTORIAL GENNEMFØRT — KAPITEL 1 AKTIVERET!]")
             self.metrics.adjust_tillid(5, "Gennemførte sikkerhedsgodkendelse med Hans")
 
+        first_zone = self.get_current_target_room()
+        first_title = ALL_ROOMS.get(first_zone, ALL_ROOMS["pumpehuset"]).title
         self.emit(
-            "Hans McDonald åbner ståldøren ind til produktionshallen:\n"
-            "\"Nu gælder det, makker! Uret til Tilsynets 5-dages NIS2-audit er startet. "
-            "Gå ind i Pumpehuset (valg [1] eller klik på '🚰 Pumpehuset (L1)' foroven) når du er klar til at stoppe det første angreb!\""
+            f"Hans McDonald åbner ståldøren ind til produktionshallen:\n"
+            f"\"Nu gælder det, makker! Uret til Tilsynets 5-dages NIS2-audit er startet. "
+            f"Den første akutte alarm kommer fra {first_title.upper()}! Gå derind (valg [1] eller klik på '{first_title}' foroven) for at stoppe angrebet!\""
         )
         self.timer_started_at = time.monotonic()
         self.incident.trigger_incident()
@@ -353,6 +451,7 @@ class GameEngine:
                 "history": self.metrics.history,
             },
             "investigation": {
+                "true_culprit_id": self.investigation.true_culprit_id,
                 "prime_suspect_id": self.investigation.prime_suspect_id,
                 "clues": {
                     c_id: {
@@ -366,6 +465,10 @@ class GameEngine:
                     s_id: {"suspicion_score": s.suspicion_score, "status": s.status, "notes": s.notes}
                     for s_id, s in self.investigation.suspects.items()
                 },
+            },
+            "campaign": {
+                "mission_order": list(self.mission_order),
+                "room_variants": dict(self.room_variants),
             },
             "forensics": {
                 "pi_handling_state": self.forensics.pi_handling_state,
@@ -494,7 +597,15 @@ class GameEngine:
             self.metrics.tillid = m_data.get("tillid", 50)
             self.metrics.history = m_data.get("history", [])
 
+            camp_data = data.get("campaign", {})
+            if "mission_order" in camp_data and isinstance(camp_data["mission_order"], list):
+                self.mission_order = camp_data["mission_order"]
+            if "room_variants" in camp_data and isinstance(camp_data["room_variants"], dict):
+                self.room_variants = camp_data["room_variants"]
+
             inv_data = data.get("investigation", {})
+            loaded_culprit = inv_data.get("true_culprit_id", "lars_ex_tekniker")
+            self.investigation.configure_dynamic_case(loaded_culprit, self.room_variants)
             self.investigation.prime_suspect_id = inv_data.get("prime_suspect_id")
             for c_id, c_val in inv_data.get("clues", {}).items():
                 if c_id in self.investigation.clues:
@@ -1243,20 +1354,25 @@ class GameEngine:
             self.flags.add("chapter-1-done")
             self.pump_deadline_active = False
             self.active_workbench = None
-            self.chapter = 2
             self.metrics.adjust_drift(10, "Pumpe 2 normaliseret til 3.2 Bar")
-            self.metrics.adjust_sikkerhed(25, "Modbus FC06 spærret med DPI-firewall")
+            self.metrics.adjust_sikkerhed(25, "VFD sikret med SCALANCE S615 DPI/Conduit")
             self.metrics.adjust_tillid(15, "Hans roser rolig motorgang")
             self.metrics.adjust_compliance(15, "IEC 62443 zone 1 conduit etableret")
             self.record_clue("spor_modbus_flood")
-            self.emit("\n✅ [SCALANCE S615 DPI REGEL AKTIVERET]:")
-            self.emit("  • PERMIT Modbus TCP FC 03 (WinCC SCADA Telemetri)")
-            self.emit("  • DROP & LOG Modbus TCP FC 06/16 (Sabotage Register-skrivning)")
+            p_var = self.room_variants.get("pumpehuset", "A")
+            self.emit("\n✅ [SCALANCE S615 CONDUIT & DPI REGEL AKTIVERET]:")
+            if p_var == "B":
+                self.emit("  • BLOCK SNMPv1 Write ('private' UDP 161) & ENABLE Dynamic ARP Inspection (DAI)")
+                self.emit("  • PERMIT Modbus TCP FC 03 (WinCC SCADA Telemetri)")
+            elif p_var == "C":
+                self.emit("  • BLOCK Ukrypteret HTTP Web-API (TCP Port 80) & Lås VFD Setpunkt til PLC")
+                self.emit("  • PERMIT Modbus TCP FC 03 (WinCC SCADA Telemetri)")
+            else:
+                self.emit("  • PERMIT Modbus TCP FC 03 (WinCC SCADA Telemetri)")
+                self.emit("  • DROP & LOG Modbus TCP FC 06/16 (Sabotage Register-skrivning)")
             self.emit("  • Default Policy: DROP (Conduit IEC 62443-3-2)")
             self.emit("🎉 Pumpe 2's omdrejningstal falder til 450 RPM, og trykket stabiliserer sig på 42.0 Bar!")
-            self.emit("\n[MÅL] NYT MÅL: Kapitel 2 aktiveret! Hans kalder over radioen:")
-            self.emit("'Skynd dig til VENTIL-ØEN! Ventilerne danser rundt i et PROFINET kaos!'")
-            self.emit_investigation_checkpoint("Pumpehuset (Kapitel 1)")
+            self._advance_campaign_progress("pumpehuset", "Pumpehuset")
             return
 
         # Case B: Forgetting allow FC 03 (only drop FC 06)
@@ -1404,7 +1520,6 @@ class GameEngine:
 
         self.cavitation_deadline_active = False
         self.flags.add("chapter-2-done")
-        self.chapter = 3
         self.metrics.adjust_sikkerhed(20, "Layer 2 MRP og Port Security aktiveret")
         self.metrics.adjust_compliance(15, "NIS2 netværkssegmentering zone 2")
         self.metrics.adjust_tillid(10, "Hans lettet over Profinet-stabilitet")
@@ -1412,10 +1527,8 @@ class GameEngine:
         self.record_clue("spor_mac_oui")
         self.emit("\n🏆 [LØSNING GENNEMFØRT - IEC 62443-3-3 & IEC 62439-2]:")
         self.emit("Siemens SCALANCE XB-200 managed switch monteret på DIN-skinnen med redundant 24V forsyning.")
-        self.emit("PROFINET Media Redundancy Protocol (MRP) aktiv! Ventilerne synkroniserer, og Pumpe 2 trykket er stabilt!")
-        self.emit("\n[MÅL] NYT MÅL: Kapitel 3 aktiveret! Hans kalder over radioen:")
-        self.emit("'Hoved-el-tavlen har fået et chok - S7-1500 PLC'en er gået i STOP-mode!'")
-        self.emit_investigation_checkpoint("Ventil-øen (Kapitel 2)")
+        self.emit("PROFINET Media Redundancy Protocol (MRP) og Port Security aktiv! Ventilerne synkroniserer, og trykket er stabilt!")
+        self._advance_campaign_progress("ventil-oen", "Ventil-øen")
 
     # -------------------------------------------------------------------------
     # CHAPTER 3 ACTIONS (5-WAY BRANCHING)
@@ -1454,20 +1567,23 @@ class GameEngine:
             return
 
         self.flags.add("chapter-3-done")
-        self.chapter = 4
         self.metrics.adjust_drift(15, "S7-1500 i stabil RUN")
-        self.metrics.adjust_sikkerhed(20, "Protection Level 3 og PUT/GET deaktiveret")
+        self.metrics.adjust_sikkerhed(20, "Protection Level 3 og TIA hærdning aktiveret")
         self.metrics.adjust_compliance(15, "TIA Portal sikkerhedskonfiguration opdateret")
         self.metrics.adjust_tillid(10, "Hans stolt over grøn RUN diode")
         self.record_clue("spor_plc_stop_buffer")
+        e_var = self.room_variants.get("el-tavlen", "A")
         self.emit("\n🏆 [LØSNING GENNEMFØRT - TIA SECURITY HARDENING]:")
         self.emit("  • Adgangsniveau sat til: 'Læse-/skriveadgang beskyttet med adgangskode' (Level 3)")
-        self.emit("  • 'Permit access with PUT/GET communication from remote partner' er DEAKTIVERET.")
-        self.emit("  • S7comm port 102 afviser nu alle uautoriserede blokskrivninger.")
+        if e_var == "B":
+            self.emit("  • Fail-Safe OB35 cyklustid gendannet (100 ms) og F-Safety adgangskode låst.")
+        elif e_var == "C":
+            self.emit("  • NTP-tidssynkronisering låst til autentificeret GPS-tidsserver (SHA-256) og X.509 certifikater valideret.")
+        else:
+            self.emit("  • 'Permit access with PUT/GET communication from remote partner' er DEAKTIVERET.")
+        self.emit("  • S7comm port 102 afviser nu alle uautoriserede ændringer.")
         self.emit("S7-1500 CPU 1516F skifter til grøn RUN-diode. Sikkerhedsdeterminismen er genoprettet!")
-        self.emit("\n[MÅL] NYT MÅL: Kapitel 4 aktiveret! Hans kalder over radioen:")
-        self.emit("'Skynd dig til KONTROLRUMMET! Vores SCADA-server lækker data, og der sidder en mistænkelig 4G-router!'")
-        self.emit_investigation_checkpoint("Hoved-el-tavlen (Kapitel 3)")
+        self._advance_campaign_progress("el-tavlen", "Hoved-el-tavlen")
 
     def force_cpu_run_fails(self) -> None:
         if self.game_mode == "teach":
@@ -1584,17 +1700,14 @@ class GameEngine:
 
     def check_chapter_4_completion(self) -> None:
         reqs = {"cert-trusted", "opc-crypto-active", "anon-disabled", "router-disconnected"}
-        if reqs.issubset(self.flags):
+        if reqs.issubset(self.flags) and "chapter-4-done" not in self.flags:
             self.flags.add("chapter-4-done")
             self.flags.add("opc-hardened")
-            self.chapter = 5
-            self.metrics.adjust_tillid(10, "Hans melder anlæg klar til revision")
+            self.metrics.adjust_tillid(10, "Hans melder Kontrolrummet klar")
             self.emit("\n🏆 [LØSNING GENNEMFØRT - NIS2 ARTIKEL 21 & IEC 62443-3-2 IDMZ]:")
             self.emit("OPC UA serveren kører nu med fuld kryptografisk signering, kryptering og certifikatgodkendelse.")
-            self.emit("Alle bagdøre er lukkede, og anlæggets zoner er isolerede og deterministiske!")
-            self.emit("\n🎉 [SEJR] SAMTLIGE ANGREB ER AFVÆRGET! Kirsten fra Cybersikkerhedstilsynet er ankommet ved Hovedindgangen.")
-            self.emit("Gå til Hovedindgangen og fremlæg dokumentationen for at bestå den officielle NIS2-audit!")
-            self.emit_investigation_checkpoint("Kontrolrummet / IDMZ (Kapitel 4)")
+            self.emit("Den uautoriserede fjernadgang i IDMZ er fjernet, og Kontrolrummet er sikret!")
+            self._advance_campaign_progress("kontrolrummet", "Kontrolrummet / IDMZ")
 
     def block_port_4840_blindly(self) -> None:
         if self.game_mode == "teach":
@@ -1779,59 +1892,62 @@ class GameEngine:
             self.emit(f"Rolle: {suspect.role}")
             self.emit(f"Arbejdshypotese: \"{suspect.theory}\"")
 
-        if prime_id == "lars_ex_tekniker":
+        true_id = self.investigation.true_culprit_id
+        true_suspect = self.investigation.get_suspect(true_id)
+
+        if prime_id == true_id:
             self.flags.add("case-solved-lars")
+            self.flags.add("case-solved")
             self.metrics.adjust_compliance(15, "Korrekt identifikation af gerningsmand")
             self.metrics.adjust_tillid(10, "Hans lettet over sagens opklaring")
-            self.emit("\nHans spærrer øjnene op og tager sig til hovedet:")
-            self.emit("\"Lars... Vor herre bevares. Det giver jo fuldkommen mening!")
-            self.emit("Lars vidste præcis hvordan datablok DB1 var bygget op i S7-1500 PLC'en, for det var ham selv, der lavede den i TIA Portal!")
-            self.emit("Og det efterladte USB-stik mærket 'LARS - TIA V16 BACKUP'... Han efterlod sine ubeskyttede projekter uden kodeord!")
-            self.emit("Og den Raspberry Pi i kabelbakken... Lars snakkede altid om, at 'Siemens switches er spild af penge, en Pi kan det samme'.")
-            self.emit("Han har haft en gammel nøglebrik og sneg sig ind i produktionshallen efter fyringen!\"")
-
-            self.emit("\nKirsten nikker med et sjældent, anerkendende smil og retter på sine briller:")
-            self.emit("\"Vores telemetri-analyse af Teltonika 4G-routerens VPN-tunnel bekræfter din konklusion.")
-            self.emit("IP-adressen i tunnelens endepunkt peger direkte på en lejet cloud-VPS registreret til 'Lars Kofoed Automationsservice'.")
-            self.emit("Lars udnyttede operatøren Kims naivitet – han overtalte Kim til at sætte 4G-routeren op under påskud af,")
-            self.emit("at det var en uskyldig 'Wi-Fi forstærker', så Kim kunne streame fodbold om natten.")
-            self.emit("Lars forsøgte bevidst at fremprovokere et kavitetskollaps og et PLC-nedbrud lige op til vores ankomst for at hævne sin fyring.")
-            self.emit("Sagen er hermed overdraget til Rigspolitiets Nationale Cyber Crime Center (NC3) under Straffelovens § 193.")
-            self.emit("Fremragende opklaringsarbejde, konsulent!\"")
-
-        elif prime_id == "kim_operatoer":
-            self.emit("\nHans ryster på hovedet:")
-            self.emit("\"Kim?! Jamen Kim er jo bare en doven operatør på natholdet! Ja, han satte 4G-modemet i stikket bag racket,")
-            self.emit("fordi han ville se Champions League fra sofaen. Men Kim kan knap nok stave til Python!")
-            self.emit("Han var slet ikke i stand til at konstruere Scapy Modbus exploits eller DCP spoofing.\"")
-            self.emit("\nKirsten tilføjer: 'Korrekt. Kim handlede i grov strid med anlæggets fysiske sikkerhedspolitik (NIS2 Art. 21.2.i),")
-            self.emit("men han var blot en uvidende døråbner for den virkelige bagmand (den fyrede tekniker Lars Kofoed).")
-            self.emit("Kim modtager en disciplinær advarsel, men han er ikke hovedmanden bag angrebet.'")
-
-        elif prime_id == "morten_pumper":
-            self.emit("\nHans udbryder forfærdet:")
-            self.emit("\"Morten?! Nej hør nu, Mortens firma Hydropump har serviceret vores pumper i 15 år!")
-            self.emit("Netværksloggen viste ganske rigtigt Modbus-pakker fra 192.168.1.50, men det var spoofet fra den rogue Raspberry Pi")
-            self.emit("for at kaste mistanken over på en uskyldig ekstern leverandør!\"")
-            self.emit("\nKirsten: 'Vi har kontrolleret Mortens alibi. Han sad i et kundemøde i Kolding på gerningstidspunktet.")
-            self.emit("Du hoppede i gerningsmandens vildspor, konsulent.'")
-
-        elif prime_id == "apt_shadowh2o":
-            self.emit("\nKirsten trækker på smilebåndet med en tør latter:")
-            self.emit("\"ShadowH2O? Et geopolitisk cybersyndikat? Du har set for mange actionfilm, konsulent.")
-            self.emit("Dette angreb indeholdt ingen 'Zero-days' eller avancerede statsstøttede cybervåben.")
-            self.emit("Det krævede blot standardkodeord, ubeskyttede PUT/GET indstillinger og en billig Raspberry Pi tapet med gaffa.")
-            self.emit("Dette var en forsmået tidligere medarbejder – ikke en fremmed magt.\"")
-
-        elif prime_id == "systemisk_fejl":
-            self.emit("\nHans sukker:")
-            self.emit("\"Vores tekniske gæld var enorm, ja. Men gaffatape i en kabelbakke og en hemmelig 4G-router i et server-rack")
-            self.emit("opstår ikke af sig selv ved et uheld! Dette var overlagt, målrettet sabotage.\"")
-            self.emit("\nKirsten: 'Bekvem forklaring, men de fysiske beviser dokumenterer en overlagt forbrydelse.'")
+            if true_id == "lars_ex_tekniker":
+                self.emit("\nHans spærrer øjnene op og tager sig til hovedet:")
+                self.emit("\"Lars... Vor herre bevares. Det giver jo fuldkommen mening!")
+                self.emit("Lars vidste præcis hvordan datablok DB1 var bygget op i S7-1500 PLC'en, for det var ham selv, der lavede den i TIA Portal!")
+                self.emit("Og det efterladte USB-stik mærket 'LARS - TIA V16 BACKUP'... Han efterlod sine ubeskyttede projekter uden kodeord!")
+                self.emit("Han har haft en gammel nøglebrik og sneg sig ind i produktionshallen efter fyringen!\"")
+                self.emit("\nKirsten nikker med et sjældent, anerkendende smil og retter på sine briller:")
+                self.emit("\"Vores telemetri-analyse bekræfter din konklusion. Tunnelens endepunkt peger direkte på en cloud-VPS")
+                self.emit("registreret til 'Lars Kofoed Automationsservice'. Sagen er hermed overdraget til Rigspolitiets Nationale Cyber Crime Center (NC3) under Straffelovens § 193.")
+                self.emit("Fremragende opklaringsarbejde, konsulent!\"")
+            elif true_id == "morten_pumper":
+                self.emit("\nHans slår i bordet, så kaffekoppen hopper:")
+                self.emit("\"Morten Vestergaard fra Hydropump Nordic?! Det var derfor han havde så travlt med at låne hovednøglen i tirsdags!")
+                self.emit("Og dagen efter sendte hans firma et tilbud på en 'Akut 24/7 Total-Servicekontrakt' til 1,8 millioner kroner!")
+                self.emit("Det røde leverandør-USB og inventarmærket under kabelbakken fældede ham fuldstændigt!\"")
+                self.emit("\nKirsten noterer skarpt i sin tablet:")
+                self.emit("\"Et skoleeksempel på et Supply Chain Insider-angreb (NIS2 Artikel 21.2.d)! Morten Vestergaard plantede")
+                self.emit("sabotage-udstyret under sit servicebesøg for at fremprovokere et nedbrud og tvinge værket ind i en lukrativ nødkontrakt.")
+                self.emit("Rigspolitiets NC3 er varslet. Fremragende efterforskning, konsulent!\"")
+            elif true_id == "apt_shadowh2o":
+                self.emit("\nHans blegner og griber fat i bordkanten:")
+                self.emit("\"ShadowH2O... Et professionelt APT-syndikat inde i vores procesnetværk! C2-beacons gennem fjernadgangen")
+                self.emit("og den droppede ransomware-staging fil i el-tavlen viser, at vi var få minutter fra total kryptering og tørlægning!\"")
+                self.emit("\nKirsten nikker alvorligt og aktiverer den nationale CSIRT-forbindelse:")
+                self.emit("\"Dine retsmedicinske beviser og tshark-captures matcher 100% Europol-signaturerne for trusselsaktøren ShadowH2O.")
+                self.emit("Fordi du sikrede implantatet i en Faraday-pose og lukkede IDMZ-bagdøren i tide, har Center for Cybersikkerhed")
+                self.emit("kunnet neutralisere deres C2-infrastruktur. Forbilledligt arbejde, konsulent!\"")
+            elif true_id == "kim_operatoer":
+                self.emit("\nHans synker tungt og ser helt knust ud:")
+                self.emit("\"Kim... Vores egen nattevagt! Han satte ikke bare uautoriseret fjernadgang op for at streame fodbold —")
+                self.emit("da han kom til at lave en farlig fejlbetjening torsdag nat, gik han i panik og kørte hjemmelavede bypass-scripts")
+                self.emit("fra sit USB-stik for at skjule alarmerne for ledelsen!\"")
+                self.emit("\nKirsten lukker mappen med et bestemt smæk:")
+                self.emit("\"Terminalloggen kl. 03:14 og de fundne bypass-scripts på Kims USB-nøgle efterlader ingen tvivl.")
+                self.emit("Manglende RBAC-adgangskontrol og fravær af Multi-Factor Authentication (NIS2 Art. 21.2.i & 21.2.j) muliggjorde,")
+                self.emit("at en intern operatør kunne sætte hele vandværkets sikkerhed ud af kraft. Skarpt opklaret, konsulent!\"")
+        else:
+            self.emit("\nHans ryster tvivlende på hovedet:")
+            self.emit(f"\"Hmm... Når vi holder alle de analyserede spor fra zonerne op mod hinanden, hænger anklagen mod {suspect.name if suspect else prime_id} ikke helt sammen.\"")
+            self.emit(
+                f"\nKirsten gennemgår Sagstavlens krydsreferencer på sin tablet:\n"
+                f"\"De tekniske og fysiske spor i denne gennemspilning pegede samlet på {true_suspect.name if true_suspect else true_id}.\n"
+                f"Husk altid at analysere samtlige fundne spor på Sagstavlen, så mistanke-scoren og de tekniske beviser udpeger den rigtige synder!\""
+            )
 
         self.emit("\n" + "-" * 80)
         self.emit("📋 Sagstavlen er nu fremlagt! Kirsten er klar til at udstede Tilsynets officielle revision.")
-        self.emit("Tast '2' eller skriv 'revisor' for at modtage det endelige NIS2 audit-dekret!")
+        self.emit("Tast '1' eller skriv 'revisor' for at modtage det endelige NIS2 audit-dekret!")
         self.emit("-" * 80)
 
     def export_audit_report(self) -> None:
@@ -1840,7 +1956,9 @@ class GameEngine:
             self.player.name, self.flags, flaws, self.forensics.pi_handling_state
         )
         prime_id = self.investigation.prime_suspect_id
+        true_id = self.investigation.true_culprit_id
         prime_name = self.investigation.get_suspect(prime_id).name if prime_id and self.investigation.get_suspect(prime_id) else "Ingen anklaget"
+        true_name = self.investigation.get_suspect(true_id).name if self.investigation.get_suspect(true_id) else true_id
 
         # Build extensive Markdown audit report
         discovered_clues = self.investigation.get_discovered_clues()
@@ -1863,7 +1981,7 @@ class GameEngine:
             "",
             "## 2. Efterforskning & Sagstavle (Trusselsvurdering)",
             f"- **Udpeget gerningsmand:** {prime_name}",
-            f"- **Gerningsmandskonklusion:** {'KORREKT (Lars Kofoed - Sag overdraget til Rigspolitiet NC3)' if prime_id == 'lars_ex_tekniker' else 'Uafklaret eller vildledt'}",
+            f"- **Gerningsmandskonklusion:** {f'KORREKT ({true_name} - Sag overdraget til Rigspolitiet NC3)' if prime_id == true_id else f'Uafklaret eller vildledt (Reel synder: {true_name})'}",
             f"- **Dokumenterede spor:** {len(discovered_clues)} af 11 spor opdaget",
             "",
             "### Opdagede tekniske og fysiske spor:",
@@ -1935,15 +2053,18 @@ class GameEngine:
             self.player.name, self.flags, flaws, self.forensics.pi_handling_state
         )
         prime_id = self.investigation.prime_suspect_id
+        true_id = self.investigation.true_culprit_id
 
         # Kirsten's four-dimensional decree
         verdict = self.kirsten.format_final_verdict(
-            passed, score, self.metrics, remarks, prime_id
+            passed, score, self.metrics, remarks, prime_id, true_culprit_id=true_id
         )
         self.emit(verdict)
 
         # Hans debriefing
-        hans_reaction = self.hans.get_final_verdict_reaction(self.metrics, prime_id)
+        hans_reaction = self.hans.get_final_verdict_reaction(
+            self.metrics, prime_id, true_culprit_id=true_id
+        )
         self.emit(hans_reaction)
 
         # Export full official report
@@ -1989,7 +2110,7 @@ class GameEngine:
     def status(self) -> None:
         r = self.get_current_room()
         self.emit(f"\n[STATUS] KAPITEL {self.chapter}/5 | Zone: {r.title} ({r.purdue_level})")
-        self.emit(f"Mål: {OBJECTIVES.get(self.chapter, 'Gennemfør audit')}")
+        self.emit(f"Mål: {self.get_current_objective_text()}")
         self.emit(f"Arbejdsdag {self.simulated_day}/5, time {self.simulated_hour}/8 | Tid til audit: {self.time_display}")
         self.emit(f"Anlægstilstand: 🔧 Drift: {self.metrics.drift}% | 🛡️ Sikkerhed: {self.metrics.sikkerhed}% | 📜 Compliance: {self.metrics.compliance}% | 🤝 Tillid: {self.metrics.tillid}%")
         if self.cavitation_deadline_active:
@@ -2004,11 +2125,12 @@ class GameEngine:
             self.emit("Tech Support svarer ikke. Telefonsvareren siger: 'Brug din faglige viden og NIS2 vejledningen!'")
             return
         self.help_calls += 1
-        hints = {
-            1: "Tech Support: 'I Pumpehuset skal du isolere frekvensomformeren med en SCALANCE S615 router og aktivere Modbus Deep Packet Inspection (DPI)!'",
-            2: "Tech Support: 'På Ventil-øen skal du undersøge kabelbakken for fremmed hardware og montere en SCALANCE switch med MRP-ringstyring!'",
-            3: "Tech Support: 'I Hoved-el-tavlen må du aldrig røre en PLC uden offline backup! Deaktivér PUT/GET i TIA Portal for at sikre mod S7comm overstyring.'",
-            4: "Tech Support: 'I Kontrolrummet skal du flytte WinCC klientens certifikat fra Rejected til Trusted, slå Anonymous fra og koble 4G-routeren fra!'",
-            5: "Tech Support: 'Gå ud til Revisor Kirsten ved Hovedindgangen og fremlæg dokumentationen!'",
+        target = self.get_current_target_room() if self.room == "indgangen" and self.chapter < 5 else self.room
+        room_hints = {
+            "pumpehuset": "Tech Support: 'I Pumpehuset skal du åbne DIN-skinne arbejdsbænken, montere SCALANCE S615, koble VFD på LAN P1 og aktivere firewall-reglen med allow-fc 3!'",
+            "ventil-oen": "Tech Support: 'På Ventil-øen skal du undersøge kabelbakken for fremmed hardware, sikre det i en Faraday-pose og montere en SCALANCE switch med MRP-ring!'",
+            "el-tavlen": "Tech Support: 'I Hoved-el-tavlen må du aldrig røre en PLC uden offline USB-backup! Tag backup først og konfigurer derefter TIA Portal sikkerheden.'",
+            "kontrolrummet": "Tech Support: 'I Kontrolrummet skal du frakoble det uautoriserede fjernadgangs-udstyr, flytte SCADA X.509 certifikatet til Trusted, aktivere Basic256Sha256 og slå Anonymous fra!'",
+            "indgangen": "Tech Support: 'Ved Hovedindgangen skal du åbne Sagstavlen, analysere dine spor, vælge ⭐ Hovedmistænkt og fremlægge sagen for Revisor Kirsten!'",
         }
-        self.emit(f"\n[TECH SUPPORT ({self.help_calls}/{self.max_help_calls})]:\n{hints.get(self.chapter, 'Følg NIS2 retningslinjerne!')}")
+        self.emit(f"\n[TECH SUPPORT ({self.help_calls}/{self.max_help_calls})]:\n{room_hints.get(target, 'Følg NIS2 retningslinjerne!')}")

@@ -22,7 +22,7 @@ class ElTavlenRoom(BaseRoom):
 
     def get_description(self, engine: Any) -> str:
         flags = getattr(engine, "flags", set())
-        ch = getattr(engine, "chapter", 1)
+        variant = getattr(engine, "room_variants", {}).get("el-tavlen", "A")
 
         if getattr(engine, "breaker_tripped", False):
             return (
@@ -40,20 +40,30 @@ class ElTavlenRoom(BaseRoom):
             return (
                 "Hoved-el-tavlen summer med en stabil, beroligende 50 Hz brummen. CPU 1516F lyser med en fast, "
                 "grøn RUN-diode. TIA Portal konfigurationen er hærdet med Password Protection Level 3, og "
-                "uautoriserede PUT/GET kald fra S7comm port 102 afvises konsekvent ved porten."
+                "uautoriserede skrivekald på S7comm port 102 afvises konsekvent ved porten."
             )
-        if ch == 3:
+        if variant == "B":
             return (
-                "Hoved-el-tavlens låge står på klem, og duften af varm elektronik og ozon møder dig. "
-                "Siemens S7-1500 (CPU 1516F) Failsafe PLC'en står med en blinkende rød STOP-diode! Al automatisk "
-                "processtyring er slået fra, og vandværkets buffertanke tømmes gradvist. Hans McDonald tørrer "
-                "sved af panden:\n'Nogen har sendt rå S7comm blokskrivninger direkte ind i vores kalibreringsblok!'"
+                "Hoved-el-tavlens låge står på klem, og duften af varm elektronik møder dig. "
+                "Siemens S7-1500 (CPU 1516F) Fail-Safe PLC'en står med blinkende rød STOP-diode (Fejlkode 0x75E1)! "
+                "Hans McDonald tørrer sved af panden:\n'Nogen har manipuleret OB35 cyklustiden til 500 ms uden om F-Safety adgangskoden, så sikkerheds-watchdoggen udløste nødstop!'"
             )
-        return self.description
+        if variant == "C":
+            return (
+                "Hoved-el-tavlens låge står på klem, og duften af varm elektronik møder dig. "
+                "Siemens S7-1500 (CPU 1516F) står med en blinkende rød STOP-diode! Hans McDonald peger på displayet:\n"
+                "'Nogen har sendt falske NTP-tidspakker (UDP 123) og stillet PLC-uret tilbage til år 1970! Derfor fejler alle PLC'ens X.509 sikkerhedscertifikater!'"
+            )
+        return (
+            "Hoved-el-tavlens låge står på klem, og duften af varm elektronik og ozon møder dig. "
+            "Siemens S7-1500 (CPU 1516F) Failsafe PLC'en står med en blinkende rød STOP-diode! Al automatisk "
+            "processtyring er slået fra, og vandværkets buffertanke tømmes gradvist. Hans McDonald tørrer "
+            "sved af panden:\n'Nogen har sendt rå S7comm blokskrivninger direkte ind i vores kalibreringsblok!'"
+        )
 
     def get_choices(self, engine: Any) -> list[tuple[str, str, str, str]]:
         flags = getattr(engine, "flags", set())
-        ch = getattr(engine, "chapter", 1)
+        variant = getattr(engine, "room_variants", {}).get("el-tavlen", "A")
         choices: list[tuple[str, str, str, str]] = []
 
         # Breaker reset if tripped from Chapter 1
@@ -68,20 +78,31 @@ class ElTavlenRoom(BaseRoom):
             choices.append(("2", "🔍 Inspicér S7-1500 display for fejlkode 0x4542 (DEFECTIVE STOP)", "undersøg s7-1500", "normal"))
             return choices
 
-        if ch == 3:
+        if "chapter-3-done" not in flags:
             choices.append(("1", "🔍 Inspicér S7-1500 display, diagnostic buffer og USB-stikket i tavlens lomme", "undersøg usb", "normal"))
-            choices.append(("2", "📊 Kør tshark og analyser S7comm trafik på TCP port 102", "åbn wireshark", "normal"))
+            if variant == "B":
+                choices.append(("2", "📊 Kør tshark og analyser F-Safety OB35 trafik på TCP port 102", "åbn wireshark", "normal"))
+            elif variant == "C":
+                choices.append(("2", "📊 Kør tshark og analyser NTP Time-Spoofing (UDP 123) og S7comm", "åbn wireshark", "normal"))
+            else:
+                choices.append(("2", "📊 Kør tshark og analyser S7comm trafik på TCP port 102", "åbn wireshark", "normal"))
             if "backup-taken" not in flags:
                 choices.append(("3", "💾 Opret offline sikkerhedskopi af CPU 1516F projekt og DB1 til USB-stik", "tag offline backup", "normal"))
-            choices.append(("4", "⚙️ Konfigurer TIA Portal: Deaktivér PUT/GET og aktiver Protection Level 3", "konfigurer tia portal", "normal"))
+            if variant == "B":
+                choices.append(("4", "⚙️ Konfigurer TIA Portal: Gendan OB35 (100 ms), lås F-Safety og aktivér Protection Level 3", "konfigurer tia portal", "normal"))
+            elif variant == "C":
+                choices.append(("4", "⚙️ Konfigurer TIA Portal: Lås NTP til autentificeret GPS-server (SHA-256) og aktivér Protection Level 3", "konfigurer tia portal", "normal"))
+            else:
+                choices.append(("4", "⚙️ Konfigurer TIA Portal: Deaktivér PUT/GET og aktiver Protection Level 3", "konfigurer tia portal", "normal"))
             choices.append(("5", "🔑 Tving CPU 1516F i RUN-mode via den fysiske nøgleomskifter på fronten", "tving cpu i run", "normal"))
             choices.append(("6", "🛡️ Opret firewall-regel der blokerer al TCP port 102 trafik til tavlen", "bloker port 102", "normal"))
             choices.append(("7", "📦 Overfør ny firmware-opdatering direkte til CPU'en over netværket", "opdater firmware live", "normal"))
             choices.append(("8", "💻 Tilslut tekniker-laptop direkte i CPU PROFINET-port X1 under drift", "kobl laptop i plc port", "normal"))
             return choices
 
-        # Later chapters
+        # Zone already stabilized -> offer navigation to next active mission room
+        next_room = getattr(engine, "get_current_target_room", lambda: "kontrolrummet")()
         choices.append(("1", "🔍 Undersøg Siemens S7-1500 Sikkerheds-PLC (RUN)", "undersøg s7-1500", "normal"))
         choices.append(("2", "📊 Kør tshark og verificer Port 102 status", "åbn wireshark", "normal"))
-        choices.append(("3", "🖥️ Gå til Kontrolrummet (IDMZ)", "gå til kontrolrummet", "primary"))
+        choices.append(("3", f"➡️ Gå videre til næste aktive zone ({next_room})", f"gå til {next_room}", "primary"))
         return choices
