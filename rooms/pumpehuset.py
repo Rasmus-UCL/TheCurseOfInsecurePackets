@@ -61,14 +61,21 @@ class PumpehusetRoom(BaseRoom):
             choices.append(("3", "🔍 Aflæs Pumpe 2 manometer og differenstryk", "undersøg pumpe 2", "normal"))
             return choices
 
-        # If user is currently focused on the DIN-rail montage workbench
+        # If user is currently focused on the DIN-rail montage workbench (Sequential 3-step workflow)
         if getattr(engine, "active_workbench", None) == "vfd_workbench" and ch == 1:
-            choices.append(("1", "🔌 Fastgør SCALANCE S615 sikkerhedsrouteren på TS35 DIN-skinnen", "monter scalance på din-skinne", "normal"))
-            choices.append(("2", "🔀 Forbind VFD til LAN-port (P1) og anlægsnetværk til WAN-port (P5)", "kobl kabler til scalance", "normal"))
-            choices.append(("3", "🔀 Forbind VFD til WAN-port (P5) og anlægsnetværk til LAN-port (P1)", "byt om på lan og wan", "normal"))
-            choices.append(("4", "🛡️ Opret firewall-regel: 'firewall rule add --allow-fc 3 --drop-fc 6'", "firewall rule add --allow-fc 3 --drop-fc 6", "normal"))
-            choices.append(("5", "🛡️ Opret firewall-regel: 'firewall rule add --drop-fc 6'", "firewall rule add --drop-fc 6", "normal"))
-            choices.append(("6", "🚪 Luk arbejdsbænken og vend tilbage til Pumpehuset", "vis rum", "normal"))
+            if not getattr(engine, "vfd_mounted", False):
+                choices.append(("1", "🔌 [Trin 1/3] Fastgør SCALANCE S615 sikkerhedsrouteren på TS35 DIN-skinnen", "monter scalance på din-skinne", "primary"))
+                choices.append(("2", "🚪 Luk arbejdsbænken og vend tilbage til Pumpehuset", "vis rum", "normal"))
+                return choices
+            if not getattr(engine, "vfd_cabled", False) or getattr(engine, "wrong_cabling", False):
+                choices.append(("1", "🔀 [Trin 2/3] Forbind VFD til LAN-port (P1) og anlægsnetværk til WAN-port (P5)", "kobl kabler til scalance", "primary"))
+                choices.append(("2", "🔀 [Trin 2/3] Forbind VFD til WAN-port (P5) og anlægsnetværk til LAN-port (P1)", "byt om på lan og wan", "normal"))
+                choices.append(("3", "🚪 Luk arbejdsbænken og vend tilbage til Pumpehuset", "vis rum", "normal"))
+                return choices
+            choices.append(("1", "🛡️ [Trin 3/3] Opret regel: 'firewall rule add --allow-fc 3 --drop-fc 6'", "firewall rule add --allow-fc 3 --drop-fc 6", "primary"))
+            choices.append(("2", "🛡️ [Trin 3/3] Opret regel: 'firewall rule add --drop-fc 6'", "firewall rule add --drop-fc 6", "normal"))
+            choices.append(("3", "🔀 Ændr kabling: Forbind VFD til WAN-port (P5) og anlægsnetværk til LAN-port (P1)", "byt om på lan og wan", "normal"))
+            choices.append(("4", "🚪 Luk arbejdsbænken og vend tilbage til Pumpehuset", "vis rum", "normal"))
             return choices
 
         if ch == 1:

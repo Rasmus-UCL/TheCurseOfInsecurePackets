@@ -68,6 +68,17 @@ def test_gui():
         app.update()
         assert app.engine.active_workbench == "vfd_workbench"
         assert app.map.view_mode == "vfd_workbench"
+        assert app.engine.vfd_mounted is False
+
+        # Step 7B: Test Step 1 on workbench: Fastgør SCALANCE S615 på TS35 DIN-skinnen
+        print("  -> Testing Step 1 on workbench: mounting SCALANCE S615...")
+        wb_choices = app.engine.get_current_choices()
+        mount_key = [k for k, _l, cmd, _c in wb_choices if cmd == "monter scalance på din-skinne"][0]
+        app.command(mount_key)
+        app.update()
+        assert app.engine.vfd_mounted is True
+        assert app.engine.active_workbench == "vfd_workbench"
+        assert app.map.view_mode == "vfd_workbench"
 
         # Step 8A: In Teach Mode, Hans stops wrong cabling on workbench
         print("  -> Testing Teach Mode: Hans stops wrong cabling on workbench...")

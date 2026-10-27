@@ -115,38 +115,25 @@ class GameApp(tk.Tk):
             b.pack(side="left", padx=3)
             self.room_buttons[key] = b
 
-        # Controls on the right side of Navigation Bar
+        # Controls on the right side of Navigation Bar (Spacious, high contrast)
         self.mode_btn = tk.Button(
             zone_bar, text="🎓 Tilstand: TEACH", bg="#065f46", fg="#a7f3d0", activebackground="#047857",
             font=("Segoe UI", 8, "bold"), relief="raised", padx=8, command=self.toggle_mode,
         )
-        self.mode_btn.pack(side="right", padx=3)
+        self.mode_btn.pack(side="right", padx=4)
 
         tk.Button(
             zone_bar, text="🎯 NIS2 Guide", bg="#1e40af", fg="white",
-            font=("Segoe UI", 8, "bold"), relief="raised", padx=6, command=self.show_guidance_window,
-        ).pack(side="right", padx=3)
-
-        tk.Button(
-            zone_bar, text="📋 Tilsynet", bg="#4c1d95", fg="#e9d5ff",
-            font=("Segoe UI", 8, "bold"), relief="groove", padx=6, command=lambda: self.command("ring til kirsten"),
-        ).pack(side="right", padx=3)
-
-        tk.Button(
-            zone_bar, text="☕ Hans", bg="#1e293b", fg="#fde047",
-            font=("Segoe UI", 8, "bold"), relief="groove", padx=6, command=lambda: self.command("tal med hans"),
-        ).pack(side="right", padx=3)
+            font=("Segoe UI", 8, "bold"), relief="raised", padx=8, command=self.show_guidance_window,
+        ).pack(side="right", padx=4)
 
         self.support_btn = tk.Button(
-            zone_bar, text="📞 Support (3/3)", bg="#162b3d", fg="#dceaf4",
-            font=("Segoe UI", 8, "bold"), relief="groove", padx=6, command=lambda: self.command("techsupport"),
+            zone_bar, text="📞 TechSupport (3/3)", bg="#0284c7", fg="#ffffff",
+            activebackground="#0369a1", activeforeground="#ffffff",
+            font=("Segoe UI", 9, "bold"), relief="raised", padx=10,
+            command=lambda: self.command("techsupport"),
         )
-        self.support_btn.pack(side="right", padx=3)
-
-        tk.Button(
-            zone_bar, text="🎒 Rygsæk", bg="#162b3d", fg="#dceaf4",
-            font=("Segoe UI", 8, "bold"), relief="groove", padx=6, command=lambda: self.command("inventory"),
-        ).pack(side="right", padx=3)
+        self.support_btn.pack(side="right", padx=4)
 
         # 3. Objective Banner
         self.objective_banner = tk.Label(
@@ -156,7 +143,7 @@ class GameApp(tk.Tk):
         )
         self.objective_banner.pack(fill="x")
 
-        # 3.5. Four Core Metrics & Investigation Bar (Etape 2 Redesign)
+        # 3.5. Four Core Metrics & Assistant Toolbar
         self.metrics_bar = tk.Frame(self.gameplay_container, bg="#0c1622", padx=12, pady=4, relief="ridge", bd=1)
         self.metrics_bar.pack(fill="x")
 
@@ -190,6 +177,21 @@ class GameApp(tk.Tk):
             command=self.toggle_sagstavle,
         )
         self.sagstavle_btn.pack(side="right", padx=4)
+
+        tk.Button(
+            self.metrics_bar, text="📋 Tilsynet", bg="#4c1d95", fg="#e9d5ff",
+            font=("Segoe UI", 8, "bold"), relief="raised", padx=8, command=lambda: self.command("ring til kirsten"),
+        ).pack(side="right", padx=4)
+
+        tk.Button(
+            self.metrics_bar, text="☕ Spørg Hans", bg="#b45309", fg="#fef3c7",
+            font=("Segoe UI", 8, "bold"), relief="raised", padx=8, command=lambda: self.command("tal med hans"),
+        ).pack(side="right", padx=4)
+
+        tk.Button(
+            self.metrics_bar, text="🎒 Rygsæk", bg="#1e293b", fg="#dceaf4",
+            font=("Segoe UI", 8, "bold"), relief="raised", padx=8, command=lambda: self.command("inventory"),
+        ).pack(side="right", padx=4)
 
         # 4. Dedicated 2D Visual Plant Floor Screen (Static Height = 310 px in all modes)
         self.map = GameCanvas(
@@ -1098,7 +1100,11 @@ class GameApp(tk.Tk):
         else:
             self.acute_label.configure(text="ℹ️ Pumpe 2: Stand-by (Alarm aktiveres i pumpehuset)", fg="#64748b")
 
-        self.support_btn.configure(text=f"📞 Support ({self.engine.max_help_calls - self.engine.help_calls}/{self.engine.max_help_calls})")
+        remaining_support = self.engine.max_help_calls - self.engine.help_calls
+        self.support_btn.configure(
+            text=f"📞 TechSupport ({remaining_support}/{self.engine.max_help_calls})",
+            bg="#0284c7" if remaining_support > 0 else "#334155",
+        )
 
     def update_timer(self) -> None:
         if self.engine.running and self.engine.timer_started_at:

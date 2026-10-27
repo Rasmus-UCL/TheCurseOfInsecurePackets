@@ -991,13 +991,7 @@ class GameEngine:
         if cmd in {"firewall status", "firewall rules", "scalance status", "vis firewall"}:
             self.show_firewall_status()
             return True
-        if any(k in cmd for k in {"firewall workbench", "vfd workbench", "åbn workbench", "din-skinne", "din skinne", "arbejdsbænk"}):
-            self.open_vfd_workbench()
-            return True
-        if any(k in cmd for k in {"switch workbench", "montage workbench"}):
-            self.open_switch_workbench()
-            return True
-        if any(k in cmd for k in {"monter scalance", "monter firewall", "fastgør scalance"}):
+        if any(k in cmd for k in {"monter scalance", "monter firewall", "fastgør scalance", "indsæt scalance"}):
             self.mount_scalance_on_rail()
             return True
         if any(k in cmd for k in {"kobl kabler", "forbind kabler", "patchkabler", "kabling"}):
@@ -1005,6 +999,12 @@ class GameEngine:
             return True
         if any(k in cmd for k in {"byt om på lan", "forkert kabling", "wan i vfd"}):
             self.cable_scalance_wrong()
+            return True
+        if any(k in cmd for k in {"firewall workbench", "vfd workbench", "åbn workbench", "din-skinne", "din skinne", "arbejdsbænk"}):
+            self.open_vfd_workbench()
+            return True
+        if any(k in cmd for k in {"switch workbench", "montage workbench"}):
+            self.open_switch_workbench()
             return True
         if any(k in cmd for k in {"vis rum", "luk workbench", "tilbage til rum", "forlad workbench", "tilbage"}):
             self.close_workbench()
@@ -1176,17 +1176,22 @@ class GameEngine:
 
     def cable_scalance_correctly(self) -> None:
         if not self.vfd_mounted:
-            self.vfd_mounted = True
-            self.emit("\n(Du fastgør først SCALANCE S615 på DIN-skinnen)")
+            self.emit("\n⚠️ [MANGLER FYSISK MONTAGE]:")
+            self.emit("Du skal først fastgøre SCALANCE S615 sikkerhedsrouteren på TS35 DIN-skinnen (Trin 1), før du kan koble kablerne!")
+            return
         self.vfd_cabled = True
         self.wrong_cabling = False
         self.active_workbench = "vfd_workbench"
         self.emit("\n🔀 [KABLER FORBUNDET KORREKT - PURDUE LEVEL 1 CONDUIT]:")
         self.emit("  • Grønt kabel fra SINAMICS VFD tilsluttes beskyttet intern LAN Port P1.")
         self.emit("  • Gult anlægskabel fra SCADA/switch tilsluttes ekstern WAN Port P5.")
-        self.emit("Link-dioderne blinker grønt! Næste skridt: Konfigurer firewall-reglerne.")
+        self.emit("Link-dioderne blinker grønt! Næste skridt (Trin 3): Konfigurer firewall-reglerne.")
 
     def cable_scalance_wrong(self) -> None:
+        if not self.vfd_mounted:
+            self.emit("\n⚠️ [MANGLER FYSISK MONTAGE]:")
+            self.emit("Du skal først fastgøre SCALANCE S615 sikkerhedsrouteren på TS35 DIN-skinnen (Trin 1), før du kan koble kablerne!")
+            return
         if self.game_mode == "teach":
             self.emit("\n🛑 [HANS GRIBER IND — TEACH MODE VEJLEDNING]:")
             self.emit("Hans McDonald peger advarende på portene på SCALANCE S615:")
@@ -1211,11 +1216,17 @@ class GameEngine:
             self.emit("⚠️ Frekvensomformeren er strømløs på grund af udløst K1-relæ! Nulstil K1 i El-tavlen først.")
             return
 
-        if not self.vfd_mounted or not self.vfd_cabled:
+        if self.active_workbench == "vfd_workbench":
+            if not self.vfd_mounted:
+                self.emit("⚠️ SCALANCE S615 er endnu ikke monteret! Udfør Trin 1 (Fastgør SCALANCE S615 på TS35 DIN-skinnen) først.")
+                return
+            if not self.vfd_cabled:
+                self.emit("⚠️ Patchkablerne er endnu ikke forbundet! Udfør Trin 2 (Forbind VFD til LAN P1 og anlæg til WAN P5) først.")
+                return
+        elif not self.vfd_mounted or not self.vfd_cabled:
             self.vfd_mounted = True
             self.vfd_cabled = True
             self.wrong_cabling = False
-            self.emit("\n(SCALANCE S615 monteres på TS35 DIN-skinnen og patchkabler forbindes til LAN P1 og WAN P5)")
 
         if self.wrong_cabling:
             self.emit("⚠️ Kan ikke anvende firewall-regler: Kablerne er krydset forkert! Kobl VFD til LAN P1 først.")
