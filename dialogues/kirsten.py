@@ -19,12 +19,20 @@ class KirstenDialogue:
         incident = getattr(engine, "incident", None)
         forensics = getattr(engine, "forensics", None)
         metrics = getattr(engine, "metrics", None)
+        player_name = getattr(getattr(engine, "player", None), "name", "Konsulent") or "Konsulent"
         early_warning = incident.early_warning_sent if incident else False
+        flags = getattr(engine, "flags", set())
+
+        if self.contact_count == 1 and "kirsten-greeted" not in flags:
+            flags.add("kirsten-greeted")
+            greeting_line = f"\"Goddag, {player_name}. Tilsynet her. Du taler med ledende auditor Kirsten.\""
+        else:
+            greeting_line = f"\"Tilsynet her igen, {player_name}. Her er jeres aktuelle status hos ledende auditor Kirsten:\""
 
         lines = [
             f"\n📞 [OPKALD TIL MILJØ- OG CYBERSIKKERHEDSTILSYNET - REVISOR KIRSTEN]:",
             f"Kirsten svarer efter præcis to ringetoner med en tør, formel stemme:",
-            f"\"Goddag. Tilsynet her. Du taler med ledende auditor Kirsten.\"",
+            greeting_line,
             f"\"I befinder jer på Dag {day}, time {hour} af jeres varslede ugeperiode.\"",
             "",
             "📋 TILSYSNETS FORELØBIGE RISIKOVURDERING:",
@@ -118,23 +126,37 @@ class KirstenDialogue:
             "Overhold tidsfristerne, luk bagdørene, og fremlæg dokumentationen på fredag!\""
         )
 
-    def get_audit_intro(self, player_name: str) -> str:
+    def get_audit_intro(self, player_name: str, already_greeted: bool = False, case_presented: bool = False) -> str:
+        name = player_name or "Konsulent"
+        if case_presented:
+            return (
+                f"Kirsten lukker mappen med efterforskningssagen og åbner det tekniske NIS2-tjekskema på sin tablet:\n"
+                f"\"Nu hvor vi har gennemgået hændelsesforløbet og udpegningen af gerningsmanden, {name}, "
+                f"går vi videre til selve revisionen af de tekniske krav i NIS2 Artikel 21 & 23 samt IEC 62443 på tværs af anlæggets zoner.\""
+            )
+        if already_greeted:
+            return (
+                f"Kirsten retter på læsebrillerne og åbner sit audit-skema:\n"
+                f"\"Lad os gennemgå den tekniske dokumentation for Nordic H2O Utility punkt for punkt, {name}, "
+                f"og kontrollere om anlæggets zoner opfylder kravene i NIS2 Artikel 21 & 23 samt IEC 62443.\""
+            )
         return (
             f"Kirsten tager sine læsebriller på og slår op i sit clipboard:\n"
-            f"\"Goddag, {player_name}. Jeg er Kirsten fra Miljø- og Cybersikkerhedstilsynet.\n"
+            f"\"Goddag, {name}. Jeg er Kirsten fra Miljø- og Cybersikkerhedstilsynet.\n"
             f"Nordic H2O Utility er klassificeret som en 'Væsentlig Enhed' under NIS2-direktivet (EU 2022/2555).\n"
             f"I dag skal jeg kontrollere, om anlægget opfylder de 10 obligatoriske risikostyringskrav i Artikel 21 "
             f"samt de tekniske krav i IEC 62443 standarden.\n"
             f"Lad mig se din dokumentation og gennemgå anlæggets zoner punkt for punkt.\""
         )
 
-    def format_verdict(self, passed: bool, score: int, remarks: list[str]) -> str:
+    def format_verdict(self, passed: bool, score: int, remarks: list[str], player_name: str = "Konsulent") -> str:
+        name = player_name or "Konsulent"
         lines = []
         if passed:
             lines.append(f"\n🏆 [AUDIT BESTÅET! CERTIFICERING TILDELT - SCORE: {score}/100 POINT]:")
             lines.append("Kirsten nikker anerkendende og sætter sit officielle stempel:")
             lines.append(
-                f"\"Fremragende arbejde, konsulent! Du har demonstreret dyb teknisk forståelse for "
+                f"\"Fremragende arbejde, {name}! Du har demonstreret dyb teknisk forståelse for "
                 f"både OT-netværkssikkerhed, IEC 62443 zoner og conduits, samt NIS2 Artikel 21.\n"
                 f"Driftstilladelsen til Nordic H2O Utility er hermed forlænget for de næste tre år!\""
             )
@@ -142,7 +164,7 @@ class KirstenDialogue:
             lines.append(f"\n❌ [AUDIT DUMPET - DRIFTSTILLADELSE INDDRAGET - SCORE: {score}/100 POINT]:")
             lines.append("Kirsten ryster alvorligt på hovedet og trækker den røde pen frem:")
             lines.append(
-                f"\"Det her er ikke acceptabelt. Der er konstateret kritiske afvigelser fra NIS2 Artikel 21.\n"
+                f"\"Det her er ikke acceptabelt, {name}. Der er konstateret kritiske afvigelser fra NIS2 Artikel 21.\n"
                 f"Et vandværk i kritisk infrastruktur kan ikke drives med disse sikkerhedsmæssige huller.\n"
                 f"Følgende mangler skal udbedres omgående f.s.v. anlægget ikke skal påbydes standsning:\""
             )
@@ -161,6 +183,7 @@ class KirstenDialogue:
         remarks: list[str],
         prime_suspect_id: str | None,
         true_culprit_id: str = "lars_ex_tekniker",
+        player_name: str = "Konsulent",
     ) -> str:
         """Kirsten's comprehensive regulatory decree evaluating all 4 dimensions and the investigation."""
         lines = []
@@ -214,26 +237,27 @@ class KirstenDialogue:
 
         lines.append("--------------------------------------------------------------------------------")
 
+        name = player_name or "Konsulent"
         if passed and score >= 90 and drift >= 70 and sikkerhed >= 70:
             lines.extend([
                 "🏆 [RESULTAT: AKKREDITERET MED UDMÆRKELSE - GULDSTANDARD]:",
                 "Kirsten letter på læsebrillerne og trykker sit grønne certifikatstempel:",
-                "\"Et forbilledligt stykke arbejde! Du har demonstreret, hvordan fremtidens automationsingeniører",
-                "forener dyb OT-procesforståelse (bits & bar) med kompromisløs cybersikkerhed og retsmedicinsk omhu.",
+                f"\"Et forbilledligt stykke arbejde, {name}! Du har demonstreret, hvordan fremtidens automationsingeniører",
+                "forener dyb OT-procesforståelse (bits & bar) med kompromisløs cybersikkerhed og teknisk bevissikring.",
                 "Nordic H2O Utility tildeles fuld 3-årig NIS2 driftstilladelse uden anmærkninger!\"",
             ])
         elif passed:
             lines.extend([
                 "🏆 [RESULTAT: AUDIT BESTÅET - DRIFTSTILLADELSE FORLÆNGET]:",
                 "Kirsten sætter sit godkendelsesstempel:",
-                "\"Kravene i NIS2 Artikel 21 er opfyldt på et acceptabelt niveau. Værket kan fortsætte driften.",
+                f"\"Kravene i NIS2 Artikel 21 er opfyldt på et acceptabelt niveau, {name}. Værket kan fortsætte driften.",
                 "Følg op på de resterende anmærkninger inden næste kvartalsgennemgang.\"",
             ])
         else:
             lines.extend([
                 "❌ [RESULTAT: AUDIT DUMPET - DRIFTSTILLADELSE INDDRAGET]:",
                 "Kirsten ryster alvorligt på hovedet og trækker det røde forseglingsbånd frem:",
-                "\"Dette anlæg overholder ikke minimumskravene i NIS2 Artikel 21. Risikoen for byens drikkevand",
+                f"\"Dette anlæg overholder ikke minimumskravene i NIS2 Artikel 21, {name}. Risikoen for byens drikkevand",
                 "er uacceptabel høj. Der udstedes straks standsningspåbud jf. NIS2 Artikel 32!\"",
             ])
 

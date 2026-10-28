@@ -376,6 +376,27 @@ class InvestigationManager:
     # -------------------------------------------------------------------------
     # INVESTIGATION ACTIONS
     # -------------------------------------------------------------------------
+    def reset_for_main_campaign(self) -> None:
+        """Clear any tutorial clues, analyses, notes, and prime suspect so the real campaign starts with a clean Case Board."""
+        self.prime_suspect_id = None
+        for c in self.clues.values():
+            c.discovered = False
+            c.analyzed = False
+            c.discovered_time = ""
+        base_scores = {
+            "lars_ex_tekniker": 25,
+            "morten_pumper": 25,
+            "kim_operatoer": 25,
+            "apt_shadowh2o": 25,
+            "systemisk_fejl": 15,
+        }
+        if self.true_culprit_id in base_scores:
+            base_scores[self.true_culprit_id] = 30
+        for sid, s in self.suspects.items():
+            s.status = "Aktiv efterforskning"
+            s.notes = []
+            s.suspicion_score = base_scores.get(sid, 20)
+
     def discover_clue(self, clue_id: str, simulated_time: str = "") -> tuple[bool, Clue | None]:
         """Mark a clue as discovered and update suspect suspicion scores."""
         clue = self.clues.get(clue_id)
@@ -438,10 +459,11 @@ class InvestigationManager:
         filled = int((value / 100) * width)
         return "█" * filled + "░" * (width - filled)
 
-    def format_clue_board(self, metrics: MetricValues) -> str:
+    def format_clue_board(self, metrics: MetricValues, game_mode: str = "teach") -> str:
         """Render full ASCII/Unicode Case Board (Sagstavle)."""
         discovered = self.get_discovered_clues()
         unanalyzed = self.get_unanalyzed_clues()
+        is_exam = (game_mode == "exam")
         lines: list[str] = [
             "================================================================================",
             "                 🕵️  SAGSTAVLE – NORDIC H2O CYBER-EFTERFORSKNING               ",
@@ -460,13 +482,22 @@ class InvestigationManager:
             " MISTÆNKTE & ARBEJDSHYPOTESER (Klik på kortet eller skriv 'anklag <id>'):",
         ]
 
-        for s in sorted(self.suspects.values(), key=lambda x: x.suspicion_score, reverse=True):
+        suspect_list = (
+            list(self.suspects.values())
+            if is_exam
+            else sorted(self.suspects.values(), key=lambda x: x.suspicion_score, reverse=True)
+        )
+        for s in suspect_list:
             status_marker = "⭐ [HOVEDMISTÆNKT]" if s.status == "Hovedmistænkt" else f"[{s.status}]"
-            linked_count = len(self.get_analyzed_clues_for_suspect(s.id))
-            lines.append(
-                f"   • {s.name:<38} [{self._render_bar(s.suspicion_score, 8)}] {s.suspicion_score:2d}%  {status_marker}"
-            )
-            lines.append(f"     ID: {s.id:<18} Rolle: {s.role} | 🔗 Analyserede beviser: {linked_count}")
+            if is_exam:
+                lines.append(f"   • {s.name:<38}  {status_marker}")
+                lines.append(f"     ID: {s.id:<18} Rolle: {s.role}")
+            else:
+                linked_count = len(self.get_analyzed_clues_for_suspect(s.id))
+                lines.append(
+                    f"   • {s.name:<38} [{self._render_bar(s.suspicion_score, 8)}] {s.suspicion_score:2d}%  {status_marker}"
+                )
+                lines.append(f"     ID: {s.id:<18} Rolle: {s.role} | 🔗 Analyserede beviser: {linked_count}")
 
         lines.extend([
             "--------------------------------------------------------------------------------",
@@ -492,11 +523,12 @@ class InvestigationManager:
         ])
         return "\n".join(lines)
 
-    def format_clues_list(self) -> str:
+    def format_clues_list(self, game_mode: str = "teach") -> str:
         discovered = self.get_discovered_clues()
         if not discovered:
             return "Ingen spor fundet endnu. Undersøg pumper, kabler, logs eller kør tshark for at finde spor."
 
+        is_exam = (game_mode == "exam")
         lines = ["\n🔍 [OPDAGEDE SPOR I EFTERFORSKNINGEN]:"]
         for c in discovered:
             status_str = "✅ ANALYSERET" if c.analyzed else "⚠️ NYT (Ikke analyseret endnu)"
@@ -505,13 +537,16 @@ class InvestigationManager:
             lines.append(f"Lokalitet:  {c.discovery_room} (Fundet: {c.discovered_time})")
             lines.append(f"Beskrivelse:{c.description}")
             if c.analyzed:
-                lines.append(f"Peger mod:  {', '.join(c.associated_suspects)}")
+                if is_exam:
+                    lines.append(f"Analyse:    {c.analysis}")
+                else:
+                    lines.append(f"Peger mod:  {', '.join(c.associated_suspects)}")
             else:
                 lines.append("Peger mod:  [Ukendt indtil sporet analyseres med 'analyser spor " + c.id + "']")
         lines.append("\nTip: Skriv 'analyser spor <id>' (eller klik på sporet på Sagstavlen) for dybdegående teknisk analyse.")
         return "\n".join(lines)
 
-    def format_clue_analysis(self, clue_id: str) -> str:
+    def format_clue_analysis(self, clue_id: str, game_mode: str = "teach") -> str:
         clue = self.clues.get(clue_id)
         if not clue:
             return f"Ukendt spor '{clue_id}'. Skriv 'spor' for at se fundne spor."
@@ -528,11 +563,6 @@ class InvestigationManager:
                     if clue.title not in susp.notes:
                         susp.notes.append(clue.title)
 
-        suspect_names = [
-            f"{self.suspects[sid].name} ({sid})" if sid in self.suspects else sid
-            for sid in clue.associated_suspects
-        ]
-
         lines = [
             f"\n🔬 [DYBDE-ANALYSE AF SPOR: {clue.id}] — ✅ BEVIS KOBLET PÅ SAGSTAVLEN",
             f"Titel:      {clue.title}",
@@ -540,23 +570,38 @@ class InvestigationManager:
             f"Fund:       {clue.description}",
             f"\n🧠 OT-TEKNISK VURDERING:",
             f"{clue.analysis}",
-            f"\n🔗 HYPOTESE-KNYTNING (PEGER MOD MISTÆNKTE):",
-            f"Dette spor understøtter teorier vedrørende: {', '.join(suspect_names)}",
-            "💡 Tip: Klik på en mistænkt til venstre på Sagstavlen (eller skriv 'anklag <id>') for at vælge din ⭐ Hovedmistænkt!",
         ]
+        if game_mode == "exam":
+            lines.extend([
+                "\n📝 [EKSAMENS-MODE VURDERING]:",
+                "Sammenhold selv denne tekniske vurdering med de mistænktes adgang, kompetencer og motiver.",
+                "💡 Tip: Klik på en mistænkt til venstre på Sagstavlen (eller skriv 'anklag <id>') for at vælge din ⭐ Hovedmistænkt!",
+            ])
+        else:
+            suspect_names = [
+                f"{self.suspects[sid].name} ({sid})" if sid in self.suspects else sid
+                for sid in clue.associated_suspects
+            ]
+            lines.extend([
+                f"\n🔗 HYPOTESE-KNYTNING (PEGER MOD MISTÆNKTE):",
+                f"Dette spor understøtter teorier vedrørende: {', '.join(suspect_names)}",
+                "💡 Tip: Klik på en mistænkt til venstre på Sagstavlen (eller skriv 'anklag <id>') for at vælge din ⭐ Hovedmistænkt!",
+            ])
         return "\n".join(lines)
 
-    def format_suspects_list(self) -> str:
+    def format_suspects_list(self, game_mode: str = "teach") -> str:
+        is_exam = (game_mode == "exam")
         lines = ["\n👥 [MISTÆNKTE & HYPOTESER FOR HÆNDELSEN]:"]
         for s in self.suspects.values():
             star = "⭐ " if s.status == "Hovedmistænkt" else "   "
             lines.append(f"\n{star}ID: {s.id} ({s.name})")
             lines.append(f"   Rolle:          {s.role}")
-            lines.append(f"   Mistankegrad:   [{self._render_bar(s.suspicion_score, 10)}] {s.suspicion_score}%")
+            if not is_exam:
+                lines.append(f"   Mistankegrad:   [{self._render_bar(s.suspicion_score, 10)}] {s.suspicion_score}%")
             lines.append(f"   Teori:          {s.theory}")
             lines.append(f"   Mulighed/Adgang:{s.opportunity}")
             lines.append(f"   Motiv:          {s.motive}")
-            if s.notes:
+            if not is_exam and s.notes:
                 lines.append(f"   Knyttede spor:  {', '.join(s.notes)}")
         lines.append("\nTip: Skriv 'anklag <id>' for at fastsætte din hovedmistænkte på sagstavlen.")
         return "\n".join(lines)

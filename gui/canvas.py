@@ -704,7 +704,12 @@ class GameCanvas(tk.Canvas):
             fill="#f6d365", font=("Segoe UI", 8, "bold"),
         )
 
-        suspects = sorted(self.engine.investigation.suspects.values(), key=lambda x: x.suspicion_score, reverse=True)
+        is_exam = getattr(self.engine, "game_mode", "teach") == "exam"
+        suspects = (
+            list(self.engine.investigation.suspects.values())
+            if is_exam
+            else sorted(self.engine.investigation.suspects.values(), key=lambda x: x.suspicion_score, reverse=True)
+        )
         s_start_y = content_top_y + 21
         s_avail_h = max(140, bottom_y - s_start_y - 2)
         s_gap = 3
@@ -726,27 +731,32 @@ class GameCanvas(tk.Canvas):
             name_col = "#fde047" if is_prime else "#f8fafc"
             self.create_text(cx1 + 5, cy1 + 2, anchor="nw", text=f"{star}{s.name}", fill=name_col, font=("Segoe UI", 8, "bold"))
 
-            linked = self.engine.investigation.get_analyzed_clues_for_suspect(s.id)
-            if linked:
-                link_txt = f"🔗 {len(linked)} bevis(er) peger her"
-                link_col = "#34d399"
-            else:
-                link_txt = f"{s.role[:32]}"
+            if is_exam:
+                link_txt = f"{s.role[:42]}"
                 link_col = "#94a3b8"
-            self.create_text(cx1 + 5, cy1 + 15, anchor="nw", text=link_txt, fill=link_col, font=("Segoe UI", 7))
+                self.create_text(cx1 + 5, cy1 + 15, anchor="nw", text=link_txt, fill=link_col, font=("Segoe UI", 7))
+            else:
+                linked = self.engine.investigation.get_analyzed_clues_for_suspect(s.id)
+                if linked:
+                    link_txt = f"🔗 {len(linked)} bevis(er) peger her"
+                    link_col = "#34d399"
+                else:
+                    link_txt = f"{s.role[:32]}"
+                    link_col = "#94a3b8"
+                self.create_text(cx1 + 5, cy1 + 15, anchor="nw", text=link_txt, fill=link_col, font=("Segoe UI", 7))
 
-            # Suspicion meter
-            meter_w = 50
-            meter_x1 = cx2 - meter_w - 6
-            meter_x2 = cx2 - 6
-            meter_y1 = cy1 + 5
-            meter_y2 = cy1 + 18
-            self.create_rectangle(meter_x1, meter_y1, meter_x2, meter_y2, fill="#0f172a", outline="#334155")
-            filled_w = int((s.suspicion_score / 100) * meter_w)
-            meter_col = "#ef4444" if s.suspicion_score >= 50 else ("#f59e0b" if s.suspicion_score >= 30 else "#38bdf8")
-            if filled_w > 0:
-                self.create_rectangle(meter_x1, meter_y1, meter_x1 + filled_w, meter_y2, fill=meter_col, outline="")
-            self.create_text(meter_x1 + meter_w // 2, meter_y1 + 6, text=f"{s.suspicion_score}%", fill="white", font=("Segoe UI", 7, "bold"))
+                # Suspicion meter (Only shown in Teach Mode)
+                meter_w = 50
+                meter_x1 = cx2 - meter_w - 6
+                meter_x2 = cx2 - 6
+                meter_y1 = cy1 + 5
+                meter_y2 = cy1 + 18
+                self.create_rectangle(meter_x1, meter_y1, meter_x2, meter_y2, fill="#0f172a", outline="#334155")
+                filled_w = int((s.suspicion_score / 100) * meter_w)
+                meter_col = "#ef4444" if s.suspicion_score >= 50 else ("#f59e0b" if s.suspicion_score >= 30 else "#38bdf8")
+                if filled_w > 0:
+                    self.create_rectangle(meter_x1, meter_y1, meter_x1 + filled_w, meter_y2, fill=meter_col, outline="")
+                self.create_text(meter_x1 + meter_w // 2, meter_y1 + 6, text=f"{s.suspicion_score}%", fill="white", font=("Segoe UI", 7, "bold"))
 
             btn_id = f"susp_{s.id}"
             self.canvas_buttons[btn_id] = (cx1, cy1, cx2, cy2, lambda sid=s.id: self._trigger_command(f"anklag {sid}"))
@@ -808,11 +818,14 @@ class GameCanvas(tk.Canvas):
                 self.create_text(cx1 + 59, cy1 + 2, anchor="nw", text=f"{status_prefix}{c.title[:24]}", fill=title_col, font=("Segoe UI", 7, "bold"))
 
                 if is_analyzed:
-                    s_names = []
-                    for sid in c.associated_suspects:
-                        s_obj = self.engine.investigation.suspects.get(sid)
-                        s_names.append(s_obj.name.split()[0] if s_obj else sid)
-                    sub_txt = f"➔ Peger på: {', '.join(s_names)}" if s_names else f"{c.discovery_room} • Analyseret"
+                    if is_exam:
+                        sub_txt = f"{c.discovery_room} • Teknisk analyse klar"
+                    else:
+                        s_names = []
+                        for sid in c.associated_suspects:
+                            s_obj = self.engine.investigation.suspects.get(sid)
+                            s_names.append(s_obj.name.split()[0] if s_obj else sid)
+                        sub_txt = f"➔ Peger på: {', '.join(s_names)}" if s_names else f"{c.discovery_room} • Analyseret"
                     sub_col = "#6ee7b7"
                 else:
                     sub_txt = "👉 KLIK HER FOR ANALYSE!"
@@ -829,8 +842,14 @@ class GameCanvas(tk.Canvas):
         self.create_rectangle(0, footer_y, w, h, fill="#0b1929", outline="#0284c7", width=1)
         sel_clue = self.engine.investigation.clues.get(self.selected_clue_id) if self.selected_clue_id else (discovered[-1] if discovered else None)
         if sel_clue:
-            s_names = [self.engine.investigation.suspects[sid].name for sid in sel_clue.associated_suspects if sid in self.engine.investigation.suspects]
-            suspect_info = f"Peger på: {', '.join(s_names)}" if getattr(sel_clue, "analyzed", False) else "⚠️ KLIK PÅ KORTET OVENFOR FOR AT ANALYSERE DETTE SPOR!"
+            if getattr(sel_clue, "analyzed", False):
+                if is_exam:
+                    suspect_info = "✅ Analyseret (Vurdér selv sammenhængen ud fra analysen i terminalen)"
+                else:
+                    s_names = [self.engine.investigation.suspects[sid].name for sid in sel_clue.associated_suspects if sid in self.engine.investigation.suspects]
+                    suspect_info = f"Peger på: {', '.join(s_names)}"
+            else:
+                suspect_info = "⚠️ KLIK PÅ KORTET OVENFOR FOR AT ANALYSERE DETTE SPOR!"
             self.create_text(
                 14, footer_y + 4, anchor="nw",
                 text=f"🔬 VALGT BEVIS: [{sel_clue.id}] {sel_clue.title}  —  {suspect_info}",

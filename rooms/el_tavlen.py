@@ -100,9 +100,11 @@ class ElTavlenRoom(BaseRoom):
             choices.append(("8", "💻 Tilslut tekniker-laptop direkte i CPU PROFINET-port X1 under drift", "kobl laptop i plc port", "normal"))
             return choices
 
-        # Zone already stabilized -> offer navigation to next active mission room
+        # Zone already stabilized -> offer NIS2 Art. 23 decision and navigation to next active mission room
         next_room = getattr(engine, "get_current_target_room", lambda: "kontrolrummet")()
-        choices.append(("1", "🔍 Undersøg Siemens S7-1500 Sikkerheds-PLC (RUN)", "undersøg s7-1500", "normal"))
-        choices.append(("2", "📊 Kør tshark og verificer Port 102 status", "åbn wireshark", "normal"))
-        choices.append(("3", f"➡️ Gå videre til næste aktive zone ({next_room})", f"gå til {next_room}", "primary"))
+        if "art23-done-el-tavlen" not in flags:
+            choices.append(("1", "📋 [NIS2 Art. 23 - 24-timers reglen]: Indberet hændelsen i El-tavlen som Early Warning til Kirsten", "indberet zone el-tavlen", "warning"))
+            choices.append(("2", "📝 [Intern Log - Art. 21/23]: Undlad ny CSIRT-alarm (Føj kun fundet til den interne hændelseslog)", "log internt el-tavlen", "normal"))
+        choices.append(("3", "🔍 Undersøg Siemens S7-1500 Sikkerheds-PLC (RUN)", "undersøg s7-1500", "normal"))
+        choices.append(("4", f"➡️ Gå videre til næste aktive zone ({next_room})", f"gå til {next_room}", "primary"))
         return choices

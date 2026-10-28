@@ -61,6 +61,7 @@ class IndgangenRoom(BaseRoom):
                     "  3. Til venstre kan du derefter klikke på en mistænkt for at udpege vedkommende som din foreløbige '⭐ Hovedmistænkt'.\n\n"
                     "👉 PRØV NU: Analyser sporet ('analyser spor spor_morten_rapport' / klik på sporet på tavlen) OG vælg en foreløbig mistænkt ('anklag morten_pumper' / klik på en mistænkt)!\""
                 )
+            first_zone = getattr(engine, "mission_order", ["pumpehuset"])[0]
             return (
                 "🎓 [INTRO-TUTORIAL — TRIN 5/5: DE 4 METRIKKER & KLAR TIL INDSATS!]\n"
                 "Hans nikker tilfreds:\n"
@@ -69,21 +70,31 @@ class IndgangenRoom(BaseRoom):
                 "  • 🛡️ Sikkerhed:  IEC 62443 segmentering, firewalls, PLC-hærdning og kryptering.\n"
                 "  • 📜 Compliance: NIS2 Artikel 21/23 lovkrav, 24-timers Early Warning og Faraday-bevissikring.\n"
                 "  • 🤝 Tillid:     Mit og ledelsens samarbejde med dig.\n\n"
-                "Når du træder ind i Pumpehuset om lidt, starter Kapitel 1 og uret! Husk at tjekke Sagstavlen efter hvert kapitel.\n"
-                "👉 PRØV NU: Tast '1' ('afslut tutorial') for at starte den rigtige mission!\""
+                f"Når vi afslutter øvelsen om lidt, nulstilles Sagstavlen efter træningen, og Kapitel 1 starter ved anlæggets første alarm-zone ({first_zone})!\n"
+                "👉 PRØV NU: Tast '1' ('afslut tutorial') for at rense øvelsestavlen og starte den rigtige mission!\""
             )
 
         ch = getattr(engine, "chapter", 1)
+        player_name = getattr(getattr(engine, "player", None), "name", "Konsulent") or "Konsulent"
+        flags = getattr(engine, "flags", set())
         if ch == 5:
+            if "case-presented" in flags:
+                return (
+                    f"Du står ved skranken i Hovedindgangen sammen med chefinspektør Kirsten og Hans McDonald.\n"
+                    f"Efterforskningen og Sagstavlen er fremlagt for Tilsynet, og Kirsten har nu åbnet den tekniske NIS2-tjekliste på sin tablet:\n"
+                    f"\"Så er vi nået til selve NIS2 Artikel 21 & 23 gennemgangen af anlæggets zoner, {player_name}. "
+                    f"Vælg [1] ('revisor') når du er klar til at modtage Tilsynets samlede afgørelse og åbne revisionsrapporten.\""
+                )
+            flags.add("kirsten-greeted")
             return (
                 "Du træder ind i Hovedindgangen. Udenfor siler en kold efterårsregn ned over anlæggets rørbroer. "
                 "Ved skranken står Tilsynets chefinspektør Kirsten med sit digitale audit-tablet og en tæt mappe med NIS2-bilag. "
                 "Ved siden af står driftstekniker Hans McDonald i sin kedeldragt med termokanden i hånden. Han kigger spændt på dig.\n\n"
                 "Kirsten tjekker sit ur og retter blikket mod dig:\n"
-                "\"Tidsfristen er udløbet, konsulent. Nordic H2O Utility er klassificeret som en 'Væsentlig Enhed' under NIS2. "
-                "Vi har modtaget jeres tekniske logbøger, men nu vil Tilsynet se jeres samlede efterforskning: "
-                "Hvem stod bag angrebet, hvilke beviser understøtter det, og hvordan er anlæggets 4 metrikker endt? "
-                "Fremlæg jeres sagstavle, så Tilsynet kan afsige den endelige dom!\""
+                f"\"Goddag, {player_name}. Jeg er Kirsten fra Miljø- og Cybersikkerhedstilsynet. Nordic H2O Utility er klassificeret som en 'Væsentlig Enhed' under NIS2. "
+                "Vi har modtaget jeres tekniske logbøger, men nu vil Tilsynet se jeres samlede efterforskning og gennemføre NIS2-revisionen: "
+                "Hvem stod bag angrebet, hvilke tekniske beviser understøtter det, og hvordan er anlæggets 4 metrikker endt? "
+                "Du kan enten fremlægge jeres sagstavle først eller gå direkte til den samlede NIS2-revision.\""
             )
         return self.description
 
@@ -127,21 +138,21 @@ class IndgangenRoom(BaseRoom):
         choices: list[tuple[str, str, str, str]] = []
 
         if ch == 5:
-            # Streamlined 3-phase finale so the player only sees 3-4 clear actions at a time
+            # Streamlined finale supporting either order without duplicate greetings
             flags = getattr(engine, "flags", set())
             case_presented = "case-presented" in flags
             if not case_presented:
                 choices.append(("1", "🕵️ Åbn Sagstavlen (Analyser sidste spor og vælg ⭐ Hovedmistænkt)", "sagstavle", "primary"))
                 choices.append(("2", "⚖️ Fremlæg efterforskningen og udpeg gerningsmanden for Tilsynet", "fremlæg sagstavle", "success"))
-                choices.append(("3", "🛡️ Gennemse forensisk evidensjournal (Chain of Custody)", "vis evidens", "normal"))
+                choices.append(("3", "📋 Gennemfør afsluttende NIS2-revision direkte", "revisor", "normal"))
                 choices.append(("4", "☕ Tal med driftstekniker Hans McDonald", "tal med hans", "normal"))
             elif getattr(engine, "running", True):
                 choices.append(("1", "📋 Gennemfør afsluttende NIS2-revision og modtag Tilsynets dom", "revisor", "success"))
                 choices.append(("2", "🕵️ Åbn Sagstavlen (Skift hovedmistænkt hvis nødvendigt)", "sagstavle", "normal"))
-                choices.append(("3", "📑 Eksporter officiel NIS2 revisionsrapport (Markdown)", "eksporter rapport", "normal"))
+                choices.append(("3", "📑 Åbn & Gem Officiel NIS2 Revisionsrapport (UCL Vindue)", "eksporter rapport", "normal"))
                 choices.append(("4", "🏠 Afslut til Hovedmenuen", "hovedmenu", "normal"))
             else:
-                choices.append(("1", "📑 Eksporter officiel NIS2 revisionsrapport (Markdown)", "eksporter rapport", "success"))
+                choices.append(("1", "📑 Åbn & Gem Officiel NIS2 Revisionsrapport (UCL Vindue)", "eksporter rapport", "success"))
                 choices.append(("2", "🏠 Afslut missionen og vend tilbage til Hovedmenuen", "hovedmenu", "primary"))
             return choices
 

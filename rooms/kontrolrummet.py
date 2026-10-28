@@ -90,9 +90,11 @@ class KontrolrummetRoom(BaseRoom):
             choices.append(("7", "🛡️ Bloker al TCP port 4840 trafik i IDMZ-firewallen", "bloker port 4840 totalt", "normal"))
             return choices
 
-        # Zone already stabilized -> offer navigation to next active mission room
+        # Zone already stabilized -> offer NIS2 Art. 23 decision and navigation to next active mission room
         next_room = getattr(engine, "get_current_target_room", lambda: "indgangen")()
-        choices.append(("1", "🔍 Undersøg WinCC SCADA PC (alle parametre grønne)", "undersøg scada pc", "normal"))
-        choices.append(("2", "📊 Kør tshark og bekræft krypteret OPC.TCP session", "åbn wireshark", "normal"))
-        choices.append(("3", f"➡️ Gå videre til næste aktive zone ({next_room})", f"gå til {next_room}", "primary"))
+        if "art23-done-kontrolrummet" not in flags:
+            choices.append(("1", "📋 [NIS2 Art. 23 - 24-timers reglen]: Indberet hændelsen i Kontrolrummet som Early Warning til Kirsten", "indberet zone kontrolrummet", "warning"))
+            choices.append(("2", "📝 [Intern Log - Art. 21/23]: Undlad ny CSIRT-alarm (Føj kun fundet til den interne hændelseslog)", "log internt kontrolrummet", "normal"))
+        choices.append(("3", "🔍 Undersøg WinCC SCADA PC (alle parametre grønne)", "undersøg scada pc", "normal"))
+        choices.append(("4", f"➡️ Gå videre til næste aktive zone ({next_room})", f"gå til {next_room}", "primary"))
         return choices

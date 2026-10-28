@@ -27,7 +27,7 @@ class GameEngine:
     def __init__(
         self,
         output: Callable[[str], None] | None = None,
-        day_seconds: int = 10 * 60,
+        day_seconds: int = 2 * 60,
         pump_deadline_seconds: int = 3 * 60,
         cavitation_deadline_seconds: int = 90,
     ) -> None:
@@ -204,7 +204,10 @@ class GameEngine:
         unanalyzed = self.investigation.get_unanalyzed_clues()
         prime_id = self.investigation.prime_suspect_id
         prime_obj = self.investigation.get_suspect(prime_id) if prime_id else None
-        prime_str = f"{prime_obj.name} ({prime_obj.suspicion_score}%)" if prime_obj else "INGEN VALGT ENDNU (Brug 'anklag <id>' på Sagstavlen)"
+        if prime_obj:
+            prime_str = prime_obj.name if self.game_mode == "exam" else f"{prime_obj.name} ({prime_obj.suspicion_score}%)"
+        else:
+            prime_str = "INGEN VALGT ENDNU (Brug 'anklag <id>' på Sagstavlen)"
 
         self.emit("\n┌── 🕵️ EFTERFORSKNINGS-CHECKPOINT (JAGTEN PÅ SYNDEREN) ───────────────────────")
         self.emit(f"│ Hans McDonald tørrer sveden af panden efter sikringen af {zone_title}:")
@@ -213,7 +216,7 @@ class GameEngine:
         if unanalyzed:
             self.emit(f"│ • ⚠️ Uanalyserede spor:  {len(unanalyzed)} stk. ({', '.join(c.id for c in unanalyzed)}) -> Klik '🕵️ Sagstavle' og analyser dem!")
         else:
-            self.emit("│ • ✅ Analyse-status:     Alle fundne spor er analyseret og koblet til mistænkte.")
+            self.emit("│ • ✅ Analyse-status:     Alle fundne spor er analyseret.")
         self.emit(f"│ • ⭐ Hovedmistænkt nu:   {prime_str}")
         self.emit("└─────────────────────────────────────────────────────────────────────────────")
 
@@ -243,7 +246,7 @@ class GameEngine:
             f"📋 [MISSIONS-BRIEFING — NORDIC H2O UTILITY]\n"
             f"Direktør Jens Majer: \"Velkommen, {self.player.name} ({self.player.education}). Om 5 arbejdsdage "
             f"kontrollerer Tilsynet os efter NIS2 (EU 2022/2555) og IEC 62443 — og en trusselsaktør saboterer "
-            f"allerede anlægget! Stop angrebene metodisk, saml retsmedicinske beviser og udpeg synderen.\""
+            f"allerede anlægget! Stop angrebene metodisk, saml sikrede tekniske beviser og udpeg synderen.\""
         )
 
         if tutorial:
@@ -272,12 +275,13 @@ class GameEngine:
         self.incident.trigger_incident()
 
     def complete_tutorial(self, skipped: bool = False) -> None:
-        """Complete or skip Chapter 0 Tutorial and transition into Chapter 1."""
+        """Complete or skip Chapter 0 Tutorial, reset the Case Board, and transition into Chapter 1."""
         if not self.tutorial_active and self.chapter >= 1:
             return
         self.tutorial_active = False
         self.tutorial_step = 0
         self.chapter = 1
+        self.investigation.reset_for_main_campaign()
         self._cached_choices = None
         self._cached_state_key = None
 
@@ -285,6 +289,7 @@ class GameEngine:
             self.emit("\n⏭️ [INTRO-TUTORIAL SPRUNGET OVER — KAPITEL 1 AKTIVERET!]")
         else:
             self.emit("\n🎉 [UDSTYRSTJEK & INTRO-TUTORIAL GENNEMFØRT — KAPITEL 1 AKTIVERET!]")
+            self.emit("🧹 [SAGSTAVLE NULSTILLET]: Øvelsessporet fra tutorialen er fjernet, så din rigtige efterforskning starter på en frisk!")
             self.metrics.adjust_tillid(5, "Gennemførte sikkerhedsgodkendelse med Hans")
 
         first_zone = self.get_current_target_room()
@@ -836,12 +841,13 @@ class GameEngine:
         if self.tutorial_active and target_room != "indgangen":
             self.tutorial_active = False
             self.tutorial_step = 0
+            self.investigation.reset_for_main_campaign()
             if self.chapter == 0:
                 self.chapter = 1
             if self.timer_started_at == 0.0:
                 self.timer_started_at = time.monotonic()
                 self.incident.trigger_incident()
-            self.emit("\n🎉 [INTRO-TUTORIAL AFSLUTTET — DU TRÆDER IND I ANLÆGGET!]")
+            self.emit("\n🎉 [INTRO-TUTORIAL AFSLUTTET — SAGSTAVLEN ER NULSTILLET OG DU TRÆDER IND I ANLÆGGET!]")
 
         self.room = target_room
         self.active_workbench = None
@@ -923,18 +929,16 @@ class GameEngine:
         if not self.check_timers():
             return
 
-        # Mode toggles
-        if normalized in {"tilstand", "mode", "skift tilstand", "toggle mode"}:
-            self.toggle_game_mode()
-            self.emit(self.format_choices_text())
-            return
-        if normalized in {"tilstand teach", "mode teach", "teach", "teach mode", "undervisning"}:
-            self.toggle_game_mode("teach")
-            self.emit(self.format_choices_text())
-            return
-        if normalized in {"tilstand eksamen", "mode exam", "eksamen", "exam", "exam mode"}:
-            self.toggle_game_mode("exam")
-            self.emit(self.format_choices_text())
+        # Mode is locked during active gameplay (selected only from the Start Menu)
+        if normalized in {
+            "tilstand", "mode", "skift tilstand", "toggle mode",
+            "tilstand teach", "mode teach", "teach", "teach mode", "undervisning",
+            "tilstand eksamen", "mode exam", "eksamen", "exam", "exam mode",
+        }:
+            self.emit(
+                f"\n🔒 [TILSTAND LÅST: {self.game_mode.upper()} MODE]\n"
+                "Træningstilstanden (Teach Mode vs. Exam Mode) kan kun vælges fra Startmenuen ved begyndelsen af et nyt spil."
+            )
             return
         if normalized in {"valg", "menu", "muligheder", "handlinger"}:
             self.emit(self.format_choices_text())
@@ -964,21 +968,21 @@ class GameEngine:
         elif normalized in {"vis evidens", "evidens", "logbog", "forensik"}:
             self.emit(self.forensics.get_summary())
         elif normalized in {"sagstavle", "tavle", "board", "case board", "clueboard", "investigation", "efterforskning"}:
-            self.emit(self.investigation.format_clue_board(self.metrics))
+            self.emit(self.investigation.format_clue_board(self.metrics, game_mode=self.game_mode))
             if self.tutorial_active and self.tutorial_step == 3:
                 self.tutorial_step = 4
                 self.emit("\n" + self.get_current_room().get_description(self))
         elif normalized in {"spor", "clues", "evidensliste"}:
-            self.emit(self.investigation.format_clues_list())
+            self.emit(self.investigation.format_clues_list(game_mode=self.game_mode))
         elif normalized.startswith("analyser spor ") or normalized.startswith("analyser "):
             s_id = normalized.replace("analyser spor ", "").replace("analyser ", "").strip()
-            self.emit(self.investigation.format_clue_analysis(s_id))
+            self.emit(self.investigation.format_clue_analysis(s_id, game_mode=self.game_mode))
             if self.tutorial_active and self.tutorial_step == 4:
                 if self.investigation.get_analyzed_clues() and self.investigation.prime_suspect_id:
                     self.tutorial_step = 5
                     self.emit("\n" + self.get_current_room().get_description(self))
         elif normalized in {"mistænkte", "mistaenkte", "suspects", "hypoteser"}:
-            self.emit(self.investigation.format_suspects_list())
+            self.emit(self.investigation.format_suspects_list(game_mode=self.game_mode))
         elif normalized.startswith("anklag ") or normalized.startswith("hypotese "):
             susp_id = normalized.replace("anklag ", "").replace("hypotese ", "").strip()
             ok, msg = self.investigation.set_prime_suspect(susp_id)
@@ -991,10 +995,17 @@ class GameEngine:
                         self.emit("\n" + self.get_current_room().get_description(self))
         elif normalized in {"metrikker", "metrics", "score", "konsekvenser"}:
             self.show_metrics_status()
+        elif normalized.startswith("indberet zone "):
+            z_key = normalized.replace("indberet zone ", "").strip()
+            self.handle_zone_art23_report(z_key)
+        elif normalized.startswith("log internt "):
+            z_key = normalized.replace("log internt ", "").strip()
+            self.handle_zone_internal_log(z_key)
         elif normalized in {"indberet hændelse", "early warning", "indberet", "anmeld hændelse"}:
             self.submit_early_warning()
-        elif normalized in {"eksporter rapport", "eksport rapport", "gem rapport"}:
+        elif normalized in {"eksporter rapport", "eksport rapport", "gem rapport", "åbn rapport", "vis rapport"}:
             self.export_audit_report()
+            self.flags.add("show-report-window")
         elif normalized in {"fremlæg sagstavle", "fremlaeg sagstavle", "fremlæg sag", "fremlaeg sag", "fremlæg", "fremlaeg", "afslut efterforskning", "fremlæg beviser", "fremlaeg beviser"}:
             self.present_case_investigation()
         elif normalized.startswith("tshark") or normalized in {"man tshark", "cheat tshark", "tshark cheatsheet", "tshark help"}:
@@ -1844,14 +1855,72 @@ class GameEngine:
             self.emit(f"Der er ingen ved navn '{character}' her.")
 
     def submit_early_warning(self) -> None:
-        success, msg = self.incident.submit_early_warning(self.simulated_day, self.simulated_hour, "Sabotage af procespumper og feldbus.")
+        if self.incident.early_warning_sent:
+            msg = self.incident.record_wrong_report(
+                self.player.name,
+                "I har allerede indsendt jeres 24-timers Early Warning for dette angreb (Sag #NIS2-DK-2026-H2O-0994)! "
+                "Efterfølgende del-fund fra de øvrige zoner skal dokumenteres i jeres interne log til den samlede 72-timers rapport (Art. 23.2.b), ikke indsendes som nye 24-timers alarmer!",
+            )
+            self.flags.add("art23-wrong-report")
+            self.metrics.adjust_compliance(-10, "Fejlagtig dublet-indberetning til CSIRT")
+            self.metrics.adjust_tillid(-5, "Kirsten irriteret over dublet-indberetning")
+            self.emit(f"\n{msg}")
+            return
+
+        success, msg = self.incident.submit_early_warning(
+            self.simulated_day,
+            self.simulated_hour,
+            "Sabotage af procespumper og feldbus.",
+            player_name=self.player.name,
+        )
         if success:
             self.flags.add("early-warning-reported")
             self.metrics.adjust_compliance(20, "NIS2 24-timers Early Warning indsendt rettidigt")
-            self.metrics.adjust_tillid(10, "Ledelsen anerkender rettidig indberetning")
+            self.metrics.adjust_tillid(10, "Ledelsen og Tilsynet anerkender rettidig indberetning")
         else:
             self.metrics.adjust_compliance(-10, "Frist for 24-timers Early Warning overskredet")
         self.emit(f"\n{msg}")
+
+    def handle_zone_art23_report(self, zone_key: str) -> None:
+        """Evaluate the player's decision to submit a 24-hour NIS2 Art. 23 report after solving a zone."""
+        self.flags.add(f"art23-done-{zone_key}")
+        self._cached_choices = None
+        self._cached_state_key = None
+        if not self.incident.early_warning_sent:
+            self.submit_early_warning()
+        else:
+            zone_title = ALL_ROOMS[zone_key].title if zone_key in ALL_ROOMS else zone_key
+            msg = self.incident.record_wrong_report(
+                self.player.name,
+                f"I har allerede oprettet 24-timers Early Warning (#NIS2-DK-2026-H2O-0994) for dette angreb! "
+                f"Del-fundet i {zone_title} skulle logges internt til den samlede 72-timers hændelsesrapport (Art. 23.2.b), ikke sendes som en ny 24-timers alarm!",
+            )
+            self.flags.add("art23-wrong-report")
+            self.metrics.adjust_compliance(-10, f"Fejlagtig dublet-indberetning fra {zone_title}")
+            self.metrics.adjust_tillid(-5, "Kirsten utilfreds med unødig CSIRT-alarm")
+            self.emit(f"\n{msg}")
+
+    def handle_zone_internal_log(self, zone_key: str) -> None:
+        """Handle logging a solved zone internally without sending a new 24-hour CSIRT early warning."""
+        self.flags.add(f"art23-done-{zone_key}")
+        self._cached_choices = None
+        self._cached_state_key = None
+        zone_title = ALL_ROOMS[zone_key].title if zone_key in ALL_ROOMS else zone_key
+        if self.incident.early_warning_sent:
+            self.metrics.adjust_compliance(5, f"Korrekt intern logføring af {zone_title} til 72-timers rapport")
+            self.metrics.adjust_tillid(5, "Korrekt skelnen mellem Art. 23.2.a (24t) og 23.2.b (72t)")
+            self.emit(
+                f"\n✅ [KORREKT NIS2 ARTIKEL 23 PROCEDURE — LOGGET TIL 72-TIMERS RAPPORT]:\n"
+                f"Da 24-timers Early Warning (#NIS2-DK-2026-H2O-0994) allerede er indsendt til Tilsynet, "
+                f"tilføjer du tekniske logs og udbedringer fra {zone_title} direkte til den samlede 72-timers hændelsesrapport "
+                f"uden at spamme CSIRT med dublet-alarmer. Revisor Kirsten noterer god procedureforståelse!"
+            )
+        else:
+            self.emit(
+                f"\n📝 [INTERN LOGFØRING AF {zone_title.upper()}]:\n"
+                f"Du har kun gemt hændelsen i den interne logbog og undladt at sende en 24-timers Early Warning til Tilsynet.\n"
+                f"💡 Husk: Efter NIS2 Artikel 23.2 skal mindst én 24-timers Early Warning indsendes til Tilsynet/CSIRT inden 24 timer (senest Dag 2, time 8) ved en væsentlig cyberhændelse!"
+            )
 
     def present_case_investigation(self) -> None:
         if self.chapter < 5:
@@ -1909,7 +1978,7 @@ class GameEngine:
                 self.emit("\nKirsten nikker med et sjældent, anerkendende smil og retter på sine briller:")
                 self.emit("\"Vores telemetri-analyse bekræfter din konklusion. Tunnelens endepunkt peger direkte på en cloud-VPS")
                 self.emit("registreret til 'Lars Kofoed Automationsservice'. Sagen er hermed overdraget til Rigspolitiets Nationale Cyber Crime Center (NC3) under Straffelovens § 193.")
-                self.emit("Fremragende opklaringsarbejde, konsulent!\"")
+                self.emit(f"Fremragende opklaringsarbejde, {self.player.name}!\"")
             elif true_id == "morten_pumper":
                 self.emit("\nHans slår i bordet, så kaffekoppen hopper:")
                 self.emit("\"Morten Vestergaard fra Hydropump Nordic?! Det var derfor han havde så travlt med at låne hovednøglen i tirsdags!")
@@ -1918,15 +1987,15 @@ class GameEngine:
                 self.emit("\nKirsten noterer skarpt i sin tablet:")
                 self.emit("\"Et skoleeksempel på et Supply Chain Insider-angreb (NIS2 Artikel 21.2.d)! Morten Vestergaard plantede")
                 self.emit("sabotage-udstyret under sit servicebesøg for at fremprovokere et nedbrud og tvinge værket ind i en lukrativ nødkontrakt.")
-                self.emit("Rigspolitiets NC3 er varslet. Fremragende efterforskning, konsulent!\"")
+                self.emit(f"Rigspolitiets Nationale Cyber Crime Center (NC3) er varslet. Fremragende efterforskning, {self.player.name}!\"")
             elif true_id == "apt_shadowh2o":
                 self.emit("\nHans blegner og griber fat i bordkanten:")
                 self.emit("\"ShadowH2O... Et professionelt APT-syndikat inde i vores procesnetværk! C2-beacons gennem fjernadgangen")
                 self.emit("og den droppede ransomware-staging fil i el-tavlen viser, at vi var få minutter fra total kryptering og tørlægning!\"")
                 self.emit("\nKirsten nikker alvorligt og aktiverer den nationale CSIRT-forbindelse:")
-                self.emit("\"Dine retsmedicinske beviser og tshark-captures matcher 100% Europol-signaturerne for trusselsaktøren ShadowH2O.")
-                self.emit("Fordi du sikrede implantatet i en Faraday-pose og lukkede IDMZ-bagdøren i tide, har Center for Cybersikkerhed")
-                self.emit("kunnet neutralisere deres C2-infrastruktur. Forbilledligt arbejde, konsulent!\"")
+                self.emit("\"Dine sikrede tekniske beviser og tshark-captures matcher 100% Europol-signaturerne for trusselsaktøren ShadowH2O.")
+                self.emit("Fordi du sikrede implantatet i en Faraday-pose og lukkede IDMZ-bagdøren i tide, har Center for Cybersikkerhed og Rigspolitiets Nationale Cyber Crime Center (NC3)")
+                self.emit(f"kunnet neutralisere deres C2-infrastruktur. Forbilledligt arbejde, {self.player.name}!\"")
             elif true_id == "kim_operatoer":
                 self.emit("\nHans synker tungt og ser helt knust ud:")
                 self.emit("\"Kim... Vores egen nattevagt! Han satte ikke bare uautoriseret fjernadgang op for at streame fodbold —")
@@ -1935,7 +2004,7 @@ class GameEngine:
                 self.emit("\nKirsten lukker mappen med et bestemt smæk:")
                 self.emit("\"Terminalloggen kl. 03:14 og de fundne bypass-scripts på Kims USB-nøgle efterlader ingen tvivl.")
                 self.emit("Manglende RBAC-adgangskontrol og fravær af Multi-Factor Authentication (NIS2 Art. 21.2.i & 21.2.j) muliggjorde,")
-                self.emit("at en intern operatør kunne sætte hele vandværkets sikkerhed ud af kraft. Skarpt opklaret, konsulent!\"")
+                self.emit(f"at en intern operatør kunne sætte hele vandværkets sikkerhed ud af kraft. Sagen overdrages til Rigspolitiets Nationale Cyber Crime Center (NC3). Skarpt opklaret, {self.player.name}!\"")
         else:
             self.emit("\nHans ryster tvivlende på hovedet:")
             self.emit(f"\"Hmm... Når vi holder alle de analyserede spor fra zonerne op mod hinanden, hænger anklagen mod {suspect.name if suspect else prime_id} ikke helt sammen.\"")
@@ -1992,8 +2061,8 @@ class GameEngine:
 
         lines.extend([
             "",
-            "## 3. Forensisk Evidens & Chain of Custody (NIS2 Artikel 21.2.b)",
-            f"- **Rogue Pi Tilstand:** {self.forensics.pi_handling_state.upper()}",
+            "## 3. Teknisk Bevissikring & Chain of Custody (NIS2 Artikel 21.2.b)",
+            f"- **Rogue Hardware Tilstand:** {self.forensics.pi_handling_state.upper()}",
         ])
 
         for ev in evidence_entries:
@@ -2001,10 +2070,10 @@ class GameEngine:
 
         lines.extend([
             "",
-            "## 4. Gennemgang af NIS2 Artikel 21 Risikostyringsforanstaltninger",
+            "## 4. Gennemgang af NIS2 Artikel 21 & Artikel 23 (24-timers reglen)",
         ])
         for r in remarks:
-            icon = "✅" if not any(w in r for w in {"Mangler", "Manglende", "KRITISK", "FEJL", "fejl", "står", "blindet"}) else "❌"
+            icon = "✅" if not any(w in r for w in {"Mangler", "Manglende", "KRITISK", "FEJL", "fejl", "står", "blindet", "for sent"}) else "❌"
             lines.append(f"- {icon} {r}")
 
         lines.extend([
@@ -2016,19 +2085,19 @@ class GameEngine:
             "- **PROFINET Determinisme & MRP:** Eliminering af rogue hardware og redundans med SCALANCE XB-200.",
             "- **Siemens S7-1500 Sikkerhedshærdning:** Frakobling af ubeskyttet PUT/GET og etablering af Protection Level 3.",
             "- **OPC UA PKI & Kryptografi:** X.509 certifikatvalidering, Basic256Sha256 SignAndEncrypt og eliminering af anonym adgang.",
-            "- **NIS2 Compliance:** 24-timers Early Warning (Art. 23) og retsmedicinsk beviskæde i Faraday-pose (Art. 21.2.b).",
+            "- **NIS2 Compliance:** 24-timers Early Warning (Art. 23) og teknisk bevissikring i Faraday-pose (Art. 21.2.b).",
             "",
             "---",
             "*Genereret automatisk af The Curse of Insecure Packets - UCL Erhvervsakademi og Professionshøjskole.*"
         ])
 
         full_report_text = "\n".join(lines)
+        self.last_report_markdown = full_report_text
         try:
             with open("NIS2_Audit_Rapport_NordicH2O.md", "w", encoding="utf-8") as f:
                 f.write(full_report_text)
-            self.emit("\n📄 [NIS2 REVISIONSRAPPORT EKSPORTERET]:")
-            self.emit("Rapporten er gemt i projektmappen som 'NIS2_Audit_Rapport_NordicH2O.md'.")
-            self.emit("De studerende kan benytte denne rapport som bilag til deres UCL-studieportfolio!")
+            self.emit("\n📄 [NIS2 REVISIONSRAPPORT GENERERET]:")
+            self.emit("Rapporten er gemt som 'NIS2_Audit_Rapport_NordicH2O.md' og kan ses/gemmes fra det formaterede UCL-rapportvindue!")
         except Exception as e:
             self.emit(f"Fejl under eksport af rapport: {e}")
 
@@ -2047,7 +2116,14 @@ class GameEngine:
         return flaws
 
     def complete_audit(self) -> None:
-        self.emit(f"\n{self.kirsten.get_audit_intro(self.player.name)}")
+        # If the player chose to start the NIS2 audit before presenting the case board, present the case first seamlessly
+        if "case-presented" not in self.flags and self.investigation.prime_suspect_id:
+            self.present_case_investigation()
+
+        already_greeted = ("kirsten-greeted" in self.flags) or (self.kirsten.contact_count > 0)
+        case_presented = "case-presented" in self.flags
+        self.flags.add("kirsten-greeted")
+        self.emit(f"\n{self.kirsten.get_audit_intro(self.player.name, already_greeted=already_greeted, case_presented=case_presented)}")
         flaws = self.collect_flaws()
         passed, score, remarks, _report = self.incident.evaluate_compliance(
             self.player.name, self.flags, flaws, self.forensics.pi_handling_state
@@ -2057,7 +2133,7 @@ class GameEngine:
 
         # Kirsten's four-dimensional decree
         verdict = self.kirsten.format_final_verdict(
-            passed, score, self.metrics, remarks, prime_id, true_culprit_id=true_id
+            passed, score, self.metrics, remarks, prime_id, true_culprit_id=true_id, player_name=self.player.name
         )
         self.emit(verdict)
 
@@ -2067,12 +2143,13 @@ class GameEngine:
         )
         self.emit(hans_reaction)
 
-        # Export full official report
+        # Export full official report and trigger UCL report window in GUI
         self.export_audit_report()
+        self.flags.add("show-report-window")
 
         if passed:
-            self.emit("\n🎉 [SPILLET ER GENNEMFØRT!] Tillykke! Du har reddet Nordic H2O Utility og bestået NIS2-auditten!")
-            self.emit("En fuld revisionsrapport 'NIS2_Audit_Rapport_NordicH2O.md' er genereret til din UCL-studieportfolio.")
+            self.emit(f"\n🎉 [SPILLET ER GENNEMFØRT!] Tillykke, {self.player.name}! Du har reddet Nordic H2O Utility og bestået NIS2-auditten!")
+            self.emit("En fuld revisionsrapport 'NIS2_Audit_Rapport_NordicH2O.md' er genereret og åbnet til din UCL-studieportfolio.")
             self.emit("\n💡 Tast 'hovedmenu' eller klik '🏠 Menu' for at vende tilbage til Hovedmenuen og starte et nyt spil.")
             self.running = False
         else:

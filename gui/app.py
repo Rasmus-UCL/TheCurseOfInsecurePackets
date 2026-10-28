@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import os
+import shutil
 import tkinter as tk
-from tkinter import ttk
+from tkinter import filedialog, ttk
 from typing import Any
 
 from core.engine import GameEngine
@@ -85,7 +86,7 @@ class GameApp(tk.Tk):
         self.timer_label.pack(side="right")
 
         self.acute_label = tk.Label(
-            header, text="ℹ️ Pumpe 2: Stand-by",
+            header, text="ℹ️ Anlæg: Aktiv overvågning",
             bg="#0d1822", fg="#94a3b8", font=("Consolas", 11, "bold"), padx=12,
         )
         self.acute_label.pack(side="right", padx=10)
@@ -115,10 +116,10 @@ class GameApp(tk.Tk):
             b.pack(side="left", padx=3)
             self.room_buttons[key] = b
 
-        # Controls on the right side of Navigation Bar (Spacious, high contrast)
-        self.mode_btn = tk.Button(
-            zone_bar, text="🎓 Tilstand: TEACH", bg="#065f46", fg="#a7f3d0", activebackground="#047857",
-            font=("Segoe UI", 8, "bold"), relief="raised", padx=8, command=self.toggle_mode,
+        # Controls on the right side of Navigation Bar (Locked mode badge + Guide + TechSupport)
+        self.mode_btn = tk.Label(
+            zone_bar, text="🔒 Tilstand: TEACH", bg="#065f46", fg="#a7f3d0",
+            font=("Segoe UI", 8, "bold"), relief="ridge", bd=1, padx=8, pady=3,
         )
         self.mode_btn.pack(side="right", padx=4)
 
@@ -256,7 +257,7 @@ class GameApp(tk.Tk):
         for tab_id, tab_label in (
             ("new_game", "🎮 START NYT SPIL"),
             ("load_game", "💾 INDLÆS GEMT SPIL"),
-            ("lore", "📖 OM SPILLET & LORE"),
+            ("lore", "📖 OM SPILLET & BAGGRUND"),
             ("exit", "❌ AFSLUT"),
         ):
             btn = tk.Button(
@@ -339,70 +340,78 @@ class GameApp(tk.Tk):
 
         info_box = tk.Label(
             left_col,
-            text="ℹ️ Du ankommer til Nordic H2O Utility i en akut krisesituation.\n"
-                 "Pumpe 2 er i alarm, SCADA-loggen er manipuleret, og Revisor Kirsten "
-                 "har indledt et uanmeldt NIS2-tilsyn med trussel om 10 mio. EUR i bøde.",
+            text="ℹ️ Du er tilkaldt som OT-cybersikkerhedskonsulent hos Nordic H2O Utility.\n"
+                 "Vandværkets produktionszoner rammes af skiftende tekniske cyberangreb, mens Revisor Kirsten "
+                 "fra Miljø- og Cybersikkerhedstilsynet har indledt et uanmeldt NIS2-tilsyn med trussel om 10 mio. EUR i bøde.\n"
+                 "Hvert nyt spil sammensætter en ny rækkefølge af zoner, angrebstyper og bagmænd!",
             bg="#0a121a", fg="#cbd5e1", font=("Segoe UI", 8),
-            justify="left", padx=10, pady=10, relief="sunken", bd=1,
+            justify="left", padx=10, pady=10, relief="sunken", bd=1, wraplength=460,
         )
         info_box.pack(fill="x", pady=(10, 0))
 
-        # --- RIGHT: Mode Selection (Teach vs Exam) ---
+        # --- RIGHT: Mode Selection (Teach vs Exam — Locked once the game starts) ---
         right_col = tk.Frame(split, bg="#101c27", padx=16, pady=16, relief="groove", bd=1)
         right_col.pack(side="right", fill="both", expand=True, padx=(12, 0))
 
         tk.Label(
-            right_col, text="🎯 VÆLG TRÆNINGSTILSTAND",
+            right_col, text="🎯 VÆLG TRÆNINGSTILSTAND (Låses ved spilstart)",
             bg="#101c27", fg="#f6d365", font=("Segoe UI", 10, "bold"),
-        ).pack(anchor="w", pady=(0, 12))
+        ).pack(anchor="w", pady=(0, 10))
 
         self.menu_mode_var = tk.StringVar(value="teach")
 
-        # Teach Mode Card
-        teach_frame = tk.Frame(right_col, bg="#0a1a14", padx=12, pady=10, relief="ridge", bd=1)
-        teach_frame.pack(fill="x", pady=(0, 10))
+        # Teach Mode Card (Clearly highlighted when selected)
+        self.teach_frame = tk.Frame(right_col, bg="#064e3b", padx=12, pady=10, relief="solid", bd=3, cursor="hand2")
+        self.teach_frame.pack(fill="x", pady=(0, 10))
 
-        rb_teach = tk.Radiobutton(
-            teach_frame, text="🎓 Teach Mode (Undervisningstilstand) — [ANBEFALET]",
-            variable=self.menu_mode_var, value="teach",
-            bg="#0a1a14", fg="#34d399", selectcolor="#064e3b",
-            activebackground="#0a1a14", activeforeground="#6ee7b7",
-            font=("Segoe UI", 10, "bold"),
+        self.teach_header_btn = tk.Button(
+            self.teach_frame,
+            text="✅ [VALGT] 🎓 Teach Mode (Undervisningstilstand — Anbefalet)",
+            bg="#059669", fg="#ffffff", activebackground="#10b981", activeforeground="#ffffff",
+            font=("Segoe UI", 10, "bold"), relief="flat", anchor="w", padx=8, pady=4, cursor="hand2",
+            command=lambda: self.select_menu_mode("teach"),
         )
-        rb_teach.pack(anchor="w")
+        self.teach_header_btn.pack(fill="x")
 
-        tk.Label(
-            teach_frame,
+        self.teach_desc_lbl = tk.Label(
+            self.teach_frame,
             text="• Ingen spoilers i svarmulighederne — alle valg fremstår som realistiske handlinger.\n"
                  "• Hvis du vælger en farlig procedure, griber Hans McDonald ind og stopper dig.\n"
                  "• Hans forklarer hvorfor det er forkert og henviser til rette procedure jf. NIS2 & IEC 62443.\n"
-                 "• Ideel til studerende på UCL, workshops og øvelsestimer.",
-            bg="#0a1a14", fg="#a7f3d0", font=("Segoe UI", 8),
-            justify="left", padx=8, pady=4,
-        ).pack(anchor="w")
-
-        # Exam Mode Card
-        exam_frame = tk.Frame(right_col, bg="#1a140a", padx=12, pady=10, relief="ridge", bd=1)
-        exam_frame.pack(fill="x", pady=(0, 10))
-
-        rb_exam = tk.Radiobutton(
-            exam_frame, text="📝 Exam Mode (Eksamenstilstand) — [REALISTISK TEST]",
-            variable=self.menu_mode_var, value="exam",
-            bg="#1a140a", fg="#fbbf24", selectcolor="#78350f",
-            activebackground="#1a140a", activeforeground="#fde68a",
-            font=("Segoe UI", 10, "bold"),
+                 "• Sagstavlen viser mistanke-procenter og antallet af tekniske beviser mod hver mistænkt.",
+            bg="#064e3b", fg="#ecfdf5", font=("Segoe UI", 8),
+            justify="left", padx=8, pady=4, cursor="hand2",
         )
-        rb_exam.pack(anchor="w")
+        self.teach_desc_lbl.pack(anchor="w")
 
-        tk.Label(
-            exam_frame,
+        # Exam Mode Card (Clearly highlighted when selected)
+        self.exam_frame = tk.Frame(right_col, bg="#141820", padx=12, pady=10, relief="ridge", bd=1, cursor="hand2")
+        self.exam_frame.pack(fill="x", pady=(0, 10))
+
+        self.exam_header_btn = tk.Button(
+            self.exam_frame,
+            text="⬜ [KLIK FOR AT VÆLGE] 📝 Exam Mode (Eksamenstilstand — Realistisk Test)",
+            bg="#1e293b", fg="#cbd5e1", activebackground="#b45309", activeforeground="#ffffff",
+            font=("Segoe UI", 10, "bold"), relief="flat", anchor="w", padx=8, pady=4, cursor="hand2",
+            command=lambda: self.select_menu_mode("exam"),
+        )
+        self.exam_header_btn.pack(fill="x")
+
+        self.exam_desc_lbl = tk.Label(
+            self.exam_frame,
             text="• Hans stopper dig IKKE ved fejlvalg — han kommer kun med en tør bemærkning bagefter.\n"
                  "• Forkerte valg udføres og udløser realistiske driftskonsekvenser og NIS2-bøder.\n"
-                 "• Svarmulighederne blandes i tilfældig rækkefølge ved hvert træk.\n"
+                 "• Sagstavlen skjuler procent-barer og bevis-tællere: Du skal selv deducere synderen!\n"
                  "• Ideel til eksamensprojekter, certificeringer og selvtest.",
-            bg="#1a140a", fg="#fde68a", font=("Segoe UI", 8),
-            justify="left", padx=8, pady=4,
-        ).pack(anchor="w")
+            bg="#141820", fg="#94a3b8", font=("Segoe UI", 8),
+            justify="left", padx=8, pady=4, cursor="hand2",
+        )
+        self.exam_desc_lbl.pack(anchor="w")
+
+        for w in (self.teach_frame, self.teach_desc_lbl):
+            w.bind("<Button-1>", lambda _e: self.select_menu_mode("teach"))
+        for w in (self.exam_frame, self.exam_desc_lbl):
+            w.bind("<Button-1>", lambda _e: self.select_menu_mode("exam"))
 
         # Bottom Launch & Tutorial Options
         bottom_bar = tk.Frame(card, bg="#0d1822", pady=12)
@@ -432,6 +441,38 @@ class GameApp(tk.Tk):
             font=("Segoe UI", 10, "bold"), relief="raised", padx=18, pady=7,
             command=self.start_new_game,
         ).pack(side="right")
+
+    def select_menu_mode(self, mode: str) -> None:
+        """Visually highlight the chosen training mode (Teach vs Exam) on the Start Screen."""
+        self.menu_mode_var.set(mode)
+        if mode == "teach":
+            self.teach_frame.configure(bg="#064e3b", relief="solid", bd=3)
+            self.teach_header_btn.configure(
+                text="✅ [VALGT] 🎓 Teach Mode (Undervisningstilstand — Anbefalet)",
+                bg="#059669", fg="#ffffff",
+            )
+            self.teach_desc_lbl.configure(bg="#064e3b", fg="#ecfdf5")
+
+            self.exam_frame.configure(bg="#141820", relief="ridge", bd=1)
+            self.exam_header_btn.configure(
+                text="⬜ [KLIK FOR AT VÆLGE] 📝 Exam Mode (Eksamenstilstand — Realistisk Test)",
+                bg="#1e293b", fg="#cbd5e1",
+            )
+            self.exam_desc_lbl.configure(bg="#141820", fg="#94a3b8")
+        else:
+            self.exam_frame.configure(bg="#78350f", relief="solid", bd=3)
+            self.exam_header_btn.configure(
+                text="✅ [VALGT] 📝 Exam Mode (Eksamenstilstand — Realistisk Test)",
+                bg="#d97706", fg="#ffffff",
+            )
+            self.exam_desc_lbl.configure(bg="#78350f", fg="#fef3c7")
+
+            self.teach_frame.configure(bg="#141820", relief="ridge", bd=1)
+            self.teach_header_btn.configure(
+                text="⬜ [KLIK FOR AT VÆLGE] 🎓 Teach Mode (Undervisningstilstand — Anbefalet)",
+                bg="#1e293b", fg="#cbd5e1",
+            )
+            self.teach_desc_lbl.configure(bg="#141820", fg="#94a3b8")
 
     def setup_card_load_game(self) -> None:
         """Card: View and load saved games from saves/*.json."""
@@ -513,17 +554,17 @@ class GameApp(tk.Tk):
         ).pack(side="right", padx=4)
 
     def setup_card_lore(self) -> None:
-        """Card: Lore, Purdue architecture, NIS2, and gameplay mechanics."""
+        """Card: Game background story, dynamic mission pack, Purdue architecture, and NIS2."""
         card = tk.Frame(self.menu_content_frame, bg="#0d1822", padx=28, pady=20, relief="ridge", bd=1)
         self.cards["lore"] = card
 
         tk.Label(
-            card, text="OM SPILLET & LORE",
+            card, text="OM SPILLET & BAGGRUNDSHISTORIE",
             bg="#0d1822", fg="#f6d365", font=("Consolas", 14, "bold"),
         ).pack(anchor="w", pady=(0, 4))
 
         tk.Label(
-            card, text="Baggrundshistorie, Purdue Model, NIS2 Direktivet og gameplay-instruktioner.",
+            card, text="Baggrundshistorie, Dynamisk Missionspack, Purdue Model, NIS2 Direktivet og betjening.",
             bg="#0d1822", fg="#94a3b8", font=("Segoe UI", 9),
         ).pack(anchor="w", pady=(0, 10))
 
@@ -545,49 +586,48 @@ class GameApp(tk.Tk):
             "========================================================================================\n"
             "         THE CURSE OF INSECURE PACKETS — NORDIC H2O UTILITY INCIDENT\n"
             "========================================================================================\n\n"
-            "1. BAGGRUND: VANDVÆRKET UNDER PRES\n"
-            "Nordic H2O Utility er et moderne, men sårbart vandværk, som forsyner 85.000 borgere med\n"
-            "rent drikkevand. De seneste uger har SCADA-systemet oplevet uforklarlige trykfald, uautoriseret\n"
-            "fjernadgang og mystisk netværkstrafik.\n\n"
-            "Nu er Pumpe 2 i akut alarmtilstand (trykket nærmer sig 150 Bar sprængningsgrænsen!), og\n"
-            "Miljø- og Cybersikkerhedstilsynet ved Revisor Kirsten har varslet et uanmeldt NIS2-tilsyn.\n"
-            "Som nyansat OT-cybersikkerhedskonsulent skal du forhindre fysisk rørbrud, afdække angrebet,\n"
-            "og bringe forsyningen i fuld compliance med EU's NIS2-direktiv og standarden IEC 62443.\n\n"
+            "1. BAGGRUND: VANDVÆRKET UNDER PRES & UANMELDT NIS2-TILSYN\n"
+            "Nordic H2O Utility er et kommunalt vandværk, som forsyner 85.000 borgere med rent drikkevand.\n"
+            "Anlægget oplever pludselige driftsforstyrrelser, manipulerede styresignaler og uautoriseret\n"
+            "netværkstrafik på tværs af produktionszonerne.\n\n"
+            "Samtidig har Miljø- og Cybersikkerhedstilsynet ved chefinspektør Revisor Kirsten indledt et\n"
+            "NIS2-tilsyn med en stram 5-dages tidsfrist. Som tilkaldt OT-cybersikkerhedskonsulent skal du\n"
+            "samarbejde med senior driftstekniker Hans McDonald om at lokalisere og standse angrebene,\n"
+            "sikre de tekniske beviser, udpege gerningsmanden og bestå den afsluttende NIS2-revision!\n\n"
             "----------------------------------------------------------------------------------------\n"
-            "2. PURDUE MODELLEN & IEC 62443-3-2 ZONER & CONDUITS\n"
+            "2. DYNAMISK MISSIONSPACK (NY UDFORDRING HVER GANG DU SPILLER)\n"
+            "Spillet genererer automatisk et nyt kampagnescenarie ved hvert nyt spil:\n"
+            "  • Tilfældig zonerækkefølge: Rækkefølgen af de 4 produktionszoner udtrækkes dynamisk,\n"
+            "    mens Kapitel 5 (fremlæggelse og NIS2-audit hos Revisor Kirsten) altid er finalen.\n"
+            "  • 12 forskellige OT-angrebsscenarier (3 varianter A/B/C pr. zone): Du kan møde alt fra\n"
+            "    Modbus TCP, SNMPv1/ARP-spoofing, HTTP Web-API overrides, PROFINET DCP, 802.1Q VLAN-tags,\n"
+            "    MQTT-broer, S7comm PUT/GET, F-Safety OB35 watchdogs, NTP-spoofing til 4G/Wi-Fi/RDP-bagdøre.\n"
+            "  • 4 mulige bagmænd: De tekniske og fysiske spor på Sagstavlen tilpasser sig dynamisk\n"
+            "    rundens sande gerningsmand — du kan aldrig gætte synderen uden at analysere sporene!\n\n"
+            "----------------------------------------------------------------------------------------\n"
+            "3. PURDUE MODELLEN & IEC 62443-3-2 ZONER & CONDUITS\n"
             "Anlæggets OT-arkitektur er opbygget jf. Purdue Enterprise Reference Architecture (PERA):\n"
             "  • Level 0 (Fysisk proces):   Pumper, ventiler, tryktransmittere og flowmålere.\n"
-            "  • Level 1 (Styring):         Siemens S7-1200 PLC'er, Danfoss VFD, Festo Ventil-ø.\n"
-            "  • Level 2 (Områdestyring):   Lokale HMI touchskærme, SCALANCE managed switches.\n"
-            "  • Level 3 (Driftsledelse):   SCADA WinCC servere, historikere, ingeniør-stationer.\n"
-            "  • Level 3.5 (IDMZ):          Industriel DMZ med firewalls, jump hosts og PKI Truststore.\n"
-            "  • Level 4 (Enterprise):      Kontor-IT, ERP og eksterne leverandør-forbindelser.\n\n"
+            "  • Level 1 (Styring):         Siemens S7-1500 PLC'er, SINAMICS VFD, Festo Ventil-ø.\n"
+            "  • Level 2 (Områdestyring):   Lokale HMI skærme, SCALANCE managed switches & S615 firewalls.\n"
+            "  • Level 3 (Driftsledelse):   SCADA WinCC servere, historikere og ingeniør-stationer.\n"
+            "  • Level 3.5 (IDMZ):          Industriel DMZ med firewalls, OPC UA og X.509 PKI Truststore.\n"
+            "  • Level 4 (Enterprise):      Hovedindgangen, administration og eksterne forbindelser.\n\n"
             "----------------------------------------------------------------------------------------\n"
-            "3. NIS2-DIREKTIVET (ARTIKEL 21 & 23)\n"
+            "4. NIS2-DIREKTIVET (ARTIKEL 21 & 23 — 24-TIMERS REGLEN)\n"
             "Som væsentlig samfundskritisk forsyning skal Nordic H2O Utility overholde:\n"
-            "  • Artikel 21 (Risikostyring): Hærdning, segmentering, kryptering og leverandørstyring.\n"
-            "  • Artikel 23 (Hændelsesrapportering):\n"
-            "      - 24-timers Early Warning (indberet hændelse til Kirsten før tidsfristen).\n"
-            "      - 72-timers detaljeret hændelsesrapport og Chain of Custody bevisintegritet.\n"
-            "  • Sanktioner: Bøder på op til 10 mio. EUR eller 2% af den globale koncernomsætning.\n\n"
+            "  • Artikel 21 (Risikostyring): Netværkssegmentering, PLC-backups, kryptering og adgangskontrol.\n"
+            "  • Artikel 23 (24-timers Hændelsesindberetning):\n"
+            "      - Når du har løst den første væsentlige cyberhændelse, skal du indsende 24-timers Early\n"
+            "        Warning til Revisor Kirsten inden fristen udløber (senest Dag 2)!\n"
+            "      - Pas på: Efterfølgende del-fund under samme angreb skal logges internt til 72-timers\n"
+            "        rapporten — hvis du spammer Kirsten med dublet-alarmer, bliver hun utilfreds!\n\n"
             "----------------------------------------------------------------------------------------\n"
-            "4. DE 4 NØGLEMETRIKKER\n"
-            "Dine handlinger har direkte indflydelse på 4 modstridende hensyn:\n"
-            "  • 🔧 DRIFT (0-100%):      Vandværkets oppetid. Forkert kabling eller unødige reboots koster drift!\n"
-            "  • 🛡️ SIKKERHED (0-100%):  Netværkets modstandsdygtighed (firewalls, OPC UA PKI, segmentering).\n"
-            "  • 📜 COMPLIANCE (0-100%): NIS2-dokumentation, bevisintegritet og revisionsoverholdelse.\n"
-            "  • 🤝 TILLID (0-100%):     Samarbejdet med driftstekniker Hans McDonald og ledelsen.\n\n"
-            "----------------------------------------------------------------------------------------\n"
-            "5. EFTERFORSKNING & SAGSTAVLE\n"
-            "Undervejs finder du fysiske og digitale spor (f.eks. Rogue Raspberry Pi, 4G dongle, uautoriserede\n"
-            "Modbus-skrivninger). Gennemse 'sagstavle', analyser spor med 'analyser spor <id>', beregn SHA256\n"
-            "hashes, forsegl beviser i Faraday-poser, og konfronter den sande gerningsmand i Kapitel 5!\n\n"
-            "----------------------------------------------------------------------------------------\n"
-            "6. GEM, INDLÆS & BETJENING\n"
-            "  • Gem undervejs: Klik på '💾 Gem' knappen eller tast 'gem' i terminalen.\n"
-            "  • Gå til Hovedmenu: Klik på '🏠 Menu' knappen eller tast 'hovedmenu'.\n"
-            "  • Hotspots: Klik direkte på maskiner og DIN-skinner på 2D-skærmen for at inspicere dem.\n"
-            "  • Tast valg: Tast [1-9] for at vælge handlinger fra den aktive valgmenu.\n"
+            "5. DE 4 NØGLEMETRIKKER & SAGSTAVLEN\n"
+            "  • 🔧 DRIFT (0-100%):      Vandværkets oppetid. Undgå panik-nedlukninger og blind port-blokering!\n"
+            "  • 🛡️ SIKKERHED (0-100%):  Netværkets modstandsdygtighed (DPI-firewalls, MRP, OPC UA PKI).\n"
+            "  • 📜 COMPLIANCE (0-100%): NIS2-dokumentation, Faraday-bevissikring og Artikel 23-indberetning.\n"
+            "  • 🤝 TILLID (0-100%):     Samarbejdet med driftstekniker Hans McDonald og Tilsynet.\n"
         )
         lore_text.insert("1.0", lore_content)
         lore_text.configure(state="disabled")
@@ -833,6 +873,11 @@ class GameApp(tk.Tk):
             self.after(500, self.show_main_menu)
             return
 
+        # Open formatted UCL & NIS2 Report Window when audit completes or report is requested
+        if "show-report-window" in self.engine.flags:
+            self.engine.flags.remove("show-report-window")
+            self.after(200, self.show_audit_report_window)
+
         # Synchronize view mode with active workbench or clue board (Keep static 310px height!)
         if normalized.lower() in {"sagstavle", "tavle", "board", "case board", "clueboard", "investigation", "efterforskning"}:
             self.map.view_mode = "clue_board"
@@ -896,26 +941,21 @@ class GameApp(tk.Tk):
                 )
 
     def toggle_mode(self) -> None:
-        self.engine.toggle_game_mode()
-        self.update_mode_button()
-        self.update_action_buttons()
-        self.terminal.set_prompt_prefix(self.engine.room)
-        self.map.draw()
+        """Mode is locked during active gameplay (chosen only from the Start Menu)."""
+        pass
 
     def update_mode_button(self) -> None:
         if self.engine.game_mode == "teach":
             self.mode_btn.configure(
-                text="🎓 Tilstand: TEACH",
+                text="🔒 Tilstand: TEACH",
                 bg="#065f46",
                 fg="#a7f3d0",
-                activebackground="#047857",
             )
         else:
             self.mode_btn.configure(
-                text="📝 Tilstand: EKSAMEN",
+                text="🔒 Tilstand: EKSAMEN",
                 bg="#854d0e",
                 fg="#fef08a",
-                activebackground="#a16207",
             )
 
     def navigate_to(self, room_key: str) -> None:
@@ -1086,12 +1126,14 @@ class GameApp(tk.Tk):
             pump_time = self.engine.pump_time_display
             p_color = "#ef4444" if self.engine.pump_time_remaining <= 30 else "#f87171"
             self.acute_label.configure(text=f"⚠️ PUMPE 2 ALARM: {pump_time}", fg=p_color)
-        elif "chapter-2-done" in self.engine.flags:
-            self.acute_label.configure(text="✅ PROFINET & Ventiler sikret (MRP aktiv)", fg="#4ade80")
-        elif "chapter-1-done" in self.engine.flags:
-            self.acute_label.configure(text="✅ Pumpe 2 tryk stabiliseret (42 Bar)", fg="#4ade80")
+        elif self.engine.chapter >= 5:
+            self.acute_label.configure(text="✅ Alle 4 produktionszoner er sikret", fg="#4ade80")
         else:
-            self.acute_label.configure(text="ℹ️ Pumpe 2: Stand-by (Alarm aktiveres i pumpehuset)", fg="#64748b")
+            solved = sum(
+                1 for f in ("chapter-1-done", "chapter-2-done", "chapter-3-done", "chapter-4-done")
+                if f in self.engine.flags
+            )
+            self.acute_label.configure(text=f"🛡️ Zoner sikret: {solved}/4", fg="#38bdf8" if solved > 0 else "#94a3b8")
 
         remaining_support = self.engine.max_help_calls - self.engine.help_calls
         self.support_btn.configure(
@@ -1138,3 +1180,320 @@ class GameApp(tk.Tk):
     def show_help_window(self) -> None:
         self.engine.help()
         self.terminal.set_prompt_prefix(self.engine.room)
+
+    def _find_ucl_logo_path(self) -> str | None:
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        candidates = [
+            os.path.join(base_dir, "ucl_logo.png"),
+            os.path.join(base_dir, "assets", "ucl_logo.png"),
+            os.path.join(base_dir, "logo.png"),
+        ]
+        for path in candidates:
+            if os.path.isfile(path):
+                return path
+        return None
+
+    def _render_ucl_header_logo(self, container: tk.Frame) -> None:
+        for child in container.winfo_children():
+            child.destroy()
+
+        logo_path = self._find_ucl_logo_path()
+        if logo_path:
+            try:
+                img = tk.PhotoImage(file=logo_path)
+                # Downscale smoothly if the image is very wide/tall
+                w, h = img.width(), img.height()
+                if h > 72:
+                    factor = max(1, int(round(h / 60)))
+                    img = img.subsample(factor, factor)
+                self._ucl_logo_img_ref = img  # keep reference alive
+                lbl = tk.Label(container, image=img, bg="#00454e", bd=0)
+                lbl.pack(side="left", padx=(4, 12), pady=4)
+                return
+            except Exception:
+                pass
+
+        # Built-in crisp UCL vector badge if no PNG file is provided yet
+        logo_canvas = tk.Canvas(
+            container, width=155, height=58, bg="#00454e", highlightthickness=0
+        )
+        logo_canvas.pack(side="left", padx=(4, 12), pady=4)
+        logo_canvas.create_rectangle(2, 2, 153, 56, fill="#00353c", outline="#4fd1c5", width=2)
+        logo_canvas.create_text(
+            48, 29, text="UCL", fill="#ffffff", font=("Segoe UI", 22, "bold")
+        )
+        logo_canvas.create_line(86, 10, 86, 48, fill="#4fd1c5", width=1)
+        logo_canvas.create_text(
+            92, 20, text="Erhvervsakademi", fill="#b2f5ea", font=("Segoe UI", 7, "bold"), anchor="w"
+        )
+        logo_canvas.create_text(
+            92, 31, text="og Professions-", fill="#b2f5ea", font=("Segoe UI", 7), anchor="w"
+        )
+        logo_canvas.create_text(
+            92, 42, text="højskole", fill="#b2f5ea", font=("Segoe UI", 7), anchor="w"
+        )
+
+    def _choose_ucl_logo_file(self, logo_container: tk.Frame, parent_win: tk.Toplevel) -> None:
+        chosen = filedialog.askopenfilename(
+            parent=parent_win,
+            title="Vælg UCL-logo (.png eller .gif)",
+            filetypes=[("PNG/GIF Billeder", "*.png *.gif"), ("Alle filer", "*.*")],
+        )
+        if not chosen:
+            return
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        target = os.path.join(base_dir, "ucl_logo.png")
+        try:
+            if os.path.abspath(chosen) != os.path.abspath(target):
+                shutil.copyfile(chosen, target)
+            self._render_ucl_header_logo(logo_container)
+        except Exception as exc:
+            self.write_to_terminal(f"⚠️ Kunne ikke indlæse logo-fil: {exc}")
+
+    def _build_html_report(self, report_md: str) -> str:
+        import base64
+        import html
+
+        logo_html = (
+            '<div style="display:inline-block;padding:8px 16px;background:#00353c;'
+            'border:2px solid #4fd1c5;border-radius:6px;color:#fff;font-weight:bold;'
+            'font-size:24px;letter-spacing:1px;">UCL '
+            '<span style="font-size:11px;font-weight:normal;color:#b2f5ea;display:inline-block;'
+            'border-left:1px solid #4fd1c5;padding-left:8px;margin-left:6px;vertical-align:middle;">'
+            'Erhvervsakademi og<br>Professionshøjskole</span></div>'
+        )
+        logo_path = self._find_ucl_logo_path()
+        if logo_path and os.path.isfile(logo_path):
+            try:
+                with open(logo_path, "rb") as f:
+                    b64 = base64.b64encode(f.read()).decode("ascii")
+                logo_html = f'<img src="data:image/png;base64,{b64}" alt="UCL Logo" style="max-height:64px;" />'
+            except Exception:
+                pass
+
+        lines_html: list[str] = []
+        for raw_line in report_md.splitlines():
+            escaped = html.escape(raw_line)
+            if raw_line.startswith("# "):
+                lines_html.append(f'<h1 style="color:#00454e;border-bottom:2px solid #00454e;padding-bottom:6px;margin-top:18px;">{html.escape(raw_line[2:])}</h1>')
+            elif raw_line.startswith("## "):
+                lines_html.append(f'<h2 style="color:#0f5257;margin-top:18px;margin-bottom:6px;">{html.escape(raw_line[3:])}</h2>')
+            elif raw_line.startswith("- "):
+                lines_html.append(f'<li style="margin:4px 0;">{html.escape(raw_line[2:])}</li>')
+            elif raw_line.strip().startswith("|"):
+                lines_html.append(f'<div style="font-family:Consolas,monospace;background:#f1f5f9;padding:4px 8px;border-left:3px solid #00454e;">{escaped}</div>')
+            elif not raw_line.strip():
+                lines_html.append("<br/>")
+            else:
+                lines_html.append(f"<p style='margin:4px 0;'>{escaped}</p>")
+
+        body_content = "\n".join(lines_html)
+        return f"""<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="utf-8" />
+<title>NIS2 &amp; IEC 62443 Revisionsrapport - {html.escape(self.engine.player.name)}</title>
+<style>
+  body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #e2e8f0; margin: 0; padding: 24px; color: #1e293b; }}
+  .page {{ max-width: 820px; margin: 0 auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 6px 24px rgba(0,0,0,0.12); }}
+  .banner {{ background: #00454e; color: #ffffff; padding: 20px 28px; display: flex; align-items: center; justify-content: space-between; border-bottom: 4px solid #4fd1c5; }}
+  .content {{ padding: 28px 34px; line-height: 1.55; font-size: 14px; }}
+  .footer {{ background: #f8fafc; color: #64748b; padding: 14px 34px; font-size: 12px; border-top: 1px solid #cbd5e1; text-align: right; }}
+</style>
+</head>
+<body>
+  <div class="page">
+    <div class="banner">
+      <div>{logo_html}</div>
+      <div style="text-align:right;">
+        <div style="font-size:16px;font-weight:bold;color:#e6fffa;">OT-SIKKERHED &amp; INDUSTRIELLE NETVÆRK</div>
+        <div style="font-size:12px;color:#b2f5ea;">Officiel NIS2 (EU 2022/2555) &amp; IEC 62443 Revisionsrapport</div>
+      </div>
+    </div>
+    <div class="content">
+      {body_content}
+    </div>
+    <div class="footer">
+      Genereret i The Curse of Insecure Packets — UCL Valgfag: OT-Sikkerhed &amp; Industrielle Netværk
+    </div>
+  </div>
+</body>
+</html>
+"""
+
+    def show_audit_report_window(self) -> None:
+        if not getattr(self.engine, "last_report_markdown", ""):
+            self.engine.export_audit_report()
+            self.engine.flags.discard("show-report-window")
+
+        report_md = self.engine.last_report_markdown
+        window = tk.Toplevel(self)
+        window.title("Officiel NIS2 & IEC 62443 Revisionsrapport — UCL")
+        window.geometry("860x720")
+        window.minsize(780, 620)
+        window.configure(bg="#0b1520")
+        window.transient(self)
+
+        # Top UCL Header Banner (#00454e)
+        banner = tk.Frame(window, bg="#00454e", padx=18, pady=12, highlightthickness=1, highlightbackground="#4fd1c5")
+        banner.pack(fill="x", padx=14, pady=(14, 8))
+
+        logo_container = tk.Frame(banner, bg="#00454e")
+        logo_container.pack(side="left")
+        self._render_ucl_header_logo(logo_container)
+
+        title_box = tk.Frame(banner, bg="#00454e")
+        title_box.pack(side="left", fill="x", expand=True, padx=10)
+        tk.Label(
+            title_box,
+            text="OFFICIEL NIS2 & IEC 62443 REVISIONSRAPPORT",
+            bg="#00454e", fg="#ffffff", font=("Segoe UI", 14, "bold"), anchor="w",
+        ).pack(fill="x")
+        tk.Label(
+            title_box,
+            text=(
+                f"Valgfag: OT-Sikkerhed & Industrielle Netværk  |  "
+                f"Konsulent: {self.engine.player.name}  |  "
+                f"Tilstand: {'EKSAMEN (Blind Test)' if self.engine.game_mode == 'exam' else 'TEACH MODE'}"
+            ),
+            bg="#00454e", fg="#b2f5ea", font=("Segoe UI", 9, "bold"), anchor="w",
+        ).pack(fill="x", pady=(2, 0))
+
+        verdict = self.engine.incident.evaluate_compliance()
+        passed = verdict["passed"]
+        badge_bg = "#065f46" if passed else "#7f1d1d"
+        badge_fg = "#6ee7b7" if passed else "#fca5a5"
+        badge_txt = f"✅ BESTÅET ({verdict['compliance_score']}%)" if passed else f"❌ DUMPET ({verdict['compliance_score']}%)"
+        tk.Label(
+            banner, text=badge_txt, bg=badge_bg, fg=badge_fg,
+            font=("Segoe UI", 11, "bold"), padx=12, pady=8, relief="flat",
+        ).pack(side="right", padx=4)
+
+        # Document Viewer Frame
+        doc_frame = tk.Frame(window, bg="#101e2b", highlightthickness=1, highlightbackground="#294866")
+        doc_frame.pack(fill="both", expand=True, padx=14, pady=6)
+
+        scrollbar = tk.Scrollbar(doc_frame)
+        scrollbar.pack(side="right", fill="y")
+
+        txt = tk.Text(
+            doc_frame,
+            bg="#0d1822",
+            fg="#e2e8f0",
+            font=("Consolas", 10),
+            wrap="word",
+            padx=22,
+            pady=18,
+            yscrollcommand=scrollbar.set,
+            relief="flat",
+            spacing1=2,
+            spacing3=2,
+        )
+        txt.pack(side="left", fill="both", expand=True)
+        scrollbar.config(command=txt.yview)
+
+        txt.tag_configure("h1", font=("Segoe UI", 14, "bold"), foreground="#4fd1c5", spacing1=8, spacing3=6)
+        txt.tag_configure("h2", font=("Segoe UI", 11, "bold"), foreground="#f6d365", spacing1=10, spacing3=4)
+        txt.tag_configure("table", font=("Consolas", 10, "bold"), foreground="#93c5fd")
+        txt.tag_configure("good", font=("Consolas", 10), foreground="#4ade80")
+        txt.tag_configure("bad", font=("Consolas", 10), foreground="#f87171")
+        txt.tag_configure("body", font=("Consolas", 10), foreground="#dceaf4")
+
+        for line in report_md.splitlines():
+            if line.startswith("# "):
+                txt.insert("end", line[2:] + "\n", "h1")
+            elif line.startswith("## "):
+                txt.insert("end", line[3:] + "\n", "h2")
+            elif line.strip().startswith("|"):
+                txt.insert("end", line + "\n", "table")
+            elif "✅" in line or "BESTÅET" in line or "Rettidig" in line:
+                txt.insert("end", line + "\n", "good")
+            elif "❌" in line or "⚠️" in line or "DUMPET" in line or "Kirsten" in line and "sur" in line.lower():
+                txt.insert("end", line + "\n", "bad")
+            else:
+                txt.insert("end", line + "\n", "body")
+
+        txt.configure(state="disabled")
+
+        # Bottom Action Bar
+        btn_bar = tk.Frame(window, bg="#0b1520")
+        btn_bar.pack(fill="x", padx=14, pady=(6, 14))
+
+        status_var = tk.StringVar(value="💡 Tip: Du kan gemme rapporten som print-klar HTML (med UCL-logo) eller Markdown/Tekst.")
+        status_lbl = tk.Label(
+            btn_bar, textvariable=status_var, bg="#0b1520", fg="#94a3b8", font=("Segoe UI", 9)
+        )
+        status_lbl.pack(side="left", padx=4)
+
+        def save_to_computer() -> None:
+            safe_name = "".join(
+                c if c.isalnum() or c in ("-", "_") else "_" for c in self.engine.player.name
+            ).strip("_") or "konsulent"
+            default_file = f"NIS2_Revisionsrapport_{safe_name}.html"
+            filepath = filedialog.asksaveasfilename(
+                parent=window,
+                title="Gem NIS2 & IEC 62443 Revisionsrapport på computeren",
+                initialfile=default_file,
+                defaultextension=".html",
+                filetypes=[
+                    ("HTML Rapport med UCL-logo (.html)", "*.html"),
+                    ("Markdown Dokument (.md)", "*.md"),
+                    ("Tekstfil (.txt)", "*.txt"),
+                ],
+            )
+            if not filepath:
+                return
+            try:
+                if filepath.lower().endswith(".html"):
+                    content = self._build_html_report(report_md)
+                else:
+                    content = report_md
+                with open(filepath, "w", encoding="utf-8") as f:
+                    f.write(content)
+                status_var.set(f"✅ Rapport gemt: {filepath}")
+                status_lbl.configure(fg="#4ade80")
+            except Exception as exc:
+                status_var.set(f"❌ Fejl ved gemning: {exc}")
+                status_lbl.configure(fg="#f87171")
+
+        tk.Button(
+            btn_bar,
+            text="Luk vindue",
+            bg="#1e293b",
+            fg="#e2e8f0",
+            font=("Segoe UI", 9, "bold"),
+            padx=12,
+            pady=6,
+            relief="flat",
+            cursor="hand2",
+            command=window.destroy,
+        ).pack(side="right", padx=4)
+
+        tk.Button(
+            btn_bar,
+            text="🖼️ Vælg UCL-Logo (.png)",
+            bg="#1b3348",
+            fg="#7dd3fc",
+            font=("Segoe UI", 9, "bold"),
+            padx=12,
+            pady=6,
+            relief="flat",
+            cursor="hand2",
+            command=lambda: self._choose_ucl_logo_file(logo_container, window),
+        ).pack(side="right", padx=6)
+
+        tk.Button(
+            btn_bar,
+            text="💾 Gem Rapport på Computeren (.html / .md / .txt)",
+            bg="#059669",
+            fg="#ffffff",
+            activebackground="#047857",
+            activeforeground="#ffffff",
+            font=("Segoe UI", 10, "bold"),
+            padx=16,
+            pady=6,
+            relief="flat",
+            cursor="hand2",
+            command=save_to_computer,
+        ).pack(side="right", padx=6)
+

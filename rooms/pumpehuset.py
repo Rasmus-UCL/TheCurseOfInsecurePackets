@@ -112,9 +112,11 @@ class PumpehusetRoom(BaseRoom):
             choices.append(("6", "⚡ Afbryd forsyningen til frekvensomformeren på hovedafbryderen", "hård nødnedlukning af vfd", "normal"))
             return choices
 
-        # Zone already stabilized -> offer navigation to next active mission room
+        # Zone already stabilized -> offer NIS2 Art. 23 decision and navigation to next active mission room
         next_room = getattr(engine, "get_current_target_room", lambda: "ventil-oen")()
-        choices.append(("1", "🔍 Undersøg Pumpe 2 (stabil drift på 42.0 Bar)", "undersøg pumpe 2", "normal"))
-        choices.append(("2", "📊 Kør tshark og inspicér VLAN 10 telemetri", "åbn wireshark", "normal"))
-        choices.append(("3", f"➡️ Gå videre til næste aktive zone ({next_room})", f"gå til {next_room}", "primary"))
+        if "art23-done-pumpehuset" not in flags:
+            choices.append(("1", "📋 [NIS2 Art. 23 - 24-timers reglen]: Indberet hændelsen i Pumpehuset som Early Warning til Kirsten", "indberet zone pumpehuset", "warning"))
+            choices.append(("2", "📝 [Intern Log - Art. 21/23]: Undlad ny CSIRT-alarm (Føj kun fundet til den interne hændelseslog)", "log internt pumpehuset", "normal"))
+        choices.append(("3", "🔍 Undersøg Pumpe 2 (stabil drift på 42.0 Bar)", "undersøg pumpe 2", "normal"))
+        choices.append(("4", f"➡️ Gå videre til næste aktive zone ({next_room})", f"gå til {next_room}", "primary"))
         return choices

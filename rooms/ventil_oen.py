@@ -123,9 +123,11 @@ class VentilOenRoom(BaseRoom):
             choices.append(("3", "🕵️ Åbn Sagstavlen og analyser de nye spor", "sagstavle", "normal"))
             return choices
 
-        # Zone already stabilized -> offer navigation to next active mission room
+        # Zone already stabilized -> offer NIS2 Art. 23 decision and navigation to next active mission room
         next_room = getattr(engine, "get_current_target_room", lambda: "el-tavlen")()
-        choices.append(("1", "🔍 Undersøg Festo ventil-øen (deterministisk PROFINET RT)", "undersøg ventiler", "normal"))
-        choices.append(("2", "📊 Kør tshark og inspicér PROFINET RT rammer", "åbn wireshark", "normal"))
-        choices.append(("3", f"➡️ Gå videre til næste aktive zone ({next_room})", f"gå til {next_room}", "primary"))
+        if "art23-done-ventil-oen" not in flags:
+            choices.append(("1", "📋 [NIS2 Art. 23 - 24-timers reglen]: Indberet hændelsen på Ventil-øen som Early Warning til Kirsten", "indberet zone ventil-oen", "warning"))
+            choices.append(("2", "📝 [Intern Log - Art. 21/23]: Undlad ny CSIRT-alarm (Føj kun fundet til den interne hændelseslog)", "log internt ventil-oen", "normal"))
+        choices.append(("3", "🔍 Undersøg Festo ventil-øen (deterministisk PROFINET RT)", "undersøg ventiler", "normal"))
+        choices.append(("4", f"➡️ Gå videre til næste aktive zone ({next_room})", f"gå til {next_room}", "primary"))
         return choices
