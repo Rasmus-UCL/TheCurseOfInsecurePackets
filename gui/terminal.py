@@ -54,22 +54,22 @@ class TerminalWidget(tk.Frame):
         self.text.pack(side="left", fill="both", expand=True)
         self.scroll.config(command=self.text.yview)
 
-        # Color Tags (Green CRT Palette)
-        self.text.tag_configure("green_bright", foreground="#86efac", font=("Consolas", 10, "bold"))
-        self.text.tag_configure("green_normal", foreground="#4ade80")
-        self.text.tag_configure("green_dim", foreground="#166534")
+        # Color Tags (Industrial Workstation Palette)
+        self.text.tag_configure("green_bright", foreground="#34d399", font=("Consolas", 10, "bold"))
+        self.text.tag_configure("green_normal", foreground="#10b981")
+        self.text.tag_configure("green_dim", foreground="#047857")
         self.text.tag_configure("alarm", foreground="#f87171", font=("Consolas", 10, "bold"))
-        self.text.tag_configure("warning", foreground="#fde047")
-        self.text.tag_configure("cyan", foreground="#67e8f9")
+        self.text.tag_configure("warning", foreground="#fbbf24")
+        self.text.tag_configure("cyan", foreground="#38bdf8")
         self.text.tag_configure("purple", foreground="#c084fc")
-        self.text.tag_configure("menu_hdr", foreground="#fde047", font=("Consolas", 10, "bold"))
-        self.text.tag_configure("choice", foreground="#86efac", font=("Consolas", 10))
+        self.text.tag_configure("menu_hdr", foreground="#f59e0b", font=("Consolas", 10, "bold"))
+        self.text.tag_configure("choice", foreground="#93c5fd", font=("Consolas", 10))
 
         self.prompt_label = tk.Label(
             self.prompt_bar,
-            text="NordicH2O@OT-Consol:~$ ",
+            text="konsulent@nordic-h2o:~$ ",
             bg="#0b1710",
-            fg="#22c55e",
+            fg="#38bdf8",
             font=("Consolas", 10, "bold"),
         )
         self.prompt_label.pack(side="left")

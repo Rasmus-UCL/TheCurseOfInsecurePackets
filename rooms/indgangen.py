@@ -25,13 +25,13 @@ class IndgangenRoom(BaseRoom):
             step = getattr(engine, "tutorial_step", 1)
             if step == 1:
                 return (
-                    "🎓 [INTRO-TUTORIAL — TRIN 1/5: INSPEKTION AF RUM & HOTSPOTS]\n"
-                    "Senior driftstekniker Hans McDonald rækker dig en gul sikkerhedshjelm og peger på 2D-skærmen foroven:\n"
+                    "🎓 [INTRO-TUTORIAL — TRIN 1/5: INSPEKTION AF RUM & TEKNISKE VALG]\n"
+                    "Senior driftstekniker Hans McDonald rækker dig en gul sikkerhedshjelm og peger på kontrolpanelet foran dig:\n"
                     "\"Velkommen til Nordic H2O Utility! Inden vi låser dig ind i selve produktionshallen, tager vi et hurtigt 60-sekunders udstyrstjek "
                     "(timeren er sat på pause under tutorialen).\n\n"
-                    "I hvert rum kan du undersøge fysiske komponenter ved at KLIKKE DIREKTE på de stiplede hotspots på 2D-skærmen foroven, "
-                    "eller ved at vælge [1] i menuen herunder.\n"
-                    "👉 PRØV NU: Klik på 'EMALJESKILT (Zoner)' på skærmen foroven, eller tast '1' (eller skriv 'undersøg skilt').\""
+                    "I hvert rum kan du undersøge fysiske komponenter og udføre indgreb via knapperne i den tekniske værktøjslinje "
+                    "eller ved at taste kommandoen/tallet direkte i terminalen.\n"
+                    "👉 PRØV NU: Klik på '[1] 🔍 Undersøg emaljeskiltet' i værktøjslinjen herunder, eller tast '1' (eller skriv 'undersøg skilt').\""
                 )
             if step == 2:
                 return (
@@ -45,11 +45,11 @@ class IndgangenRoom(BaseRoom):
             if step == 3:
                 return (
                     "🎓 [INTRO-TUTORIAL — TRIN 3/5: ÅBN EFTERFORSKNINGENS SAGSTAVLE]\n"
-                    "Hans peger op på bjælken lige over 2D-skærmen, hvor knappen '🕵️ Sagstavle' nu lyser ORANGERØDT:\n"
+                    "Hans peger op på kontrolpanelet i toppen, hvor knappen '🕵️ Sagstavle' nu lyser ORANGERØDT:\n"
                     "\"Så du det?! Da du kørte tshark, fandt vi et forensisk spor ('spor_morten_rapport' fra gårsdagens servicebesøg)!\n"
                     "Mange konsulenter glemmer at lede efter selve gerningsmanden ('synderen'), fordi de har travlt med at slukke brande.\n\n"
                     "Derfor har du en interaktiv SAGSTAVLE, der samler alle mistænkte og beviser!\n"
-                    "👉 PRØV NU: Klik på den orange knap '🕵️ Sagstavle' over skærmen, eller tast '1' (eller skriv 'sagstavle').\""
+                    "👉 PRØV NU: Klik på den orange knap '🕵️ Sagstavle' i kontrolpanelet øverst, eller tast '1' (eller skriv 'sagstavle').\""
                 )
             if step == 4:
                 return (
@@ -65,7 +65,7 @@ class IndgangenRoom(BaseRoom):
             return (
                 "🎓 [INTRO-TUTORIAL — TRIN 5/5: DE 4 METRIKKER & KLAR TIL INDSATS!]\n"
                 "Hans nikker tilfreds:\n"
-                "\"Fremragende! Du har nu styr på hotspots, tshark og Sagstavlen. Som det sidste skal du kende de 4 metrikker over skærmen:\n"
+                "\"Fremragende! Du har nu styr på undersøgelser, tshark og Sagstavlen. Som det sidste skal du kende de 4 metrikker i kontrolpanelet øverst:\n"
                 "  • 🔧 Drift:      Vandværkets oppetid og tryk (pas på panik-nedlukninger og blind blokering af porte!).\n"
                 "  • 🛡️ Sikkerhed:  IEC 62443 segmentering, firewalls, PLC-hærdning og kryptering.\n"
                 "  • 📜 Compliance: NIS2 Artikel 21/23 lovkrav, 24-timers Early Warning og Faraday-bevissikring.\n"

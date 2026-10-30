@@ -54,52 +54,68 @@ class GameApp(tk.Tk):
         self.setup_gameplay_ui()
 
     def setup_gameplay_ui(self) -> None:
-        """Create all widgets for the live gameplay screen."""
-        # 1. Top Header Bar: Simulation Status, Timers & Workweek
-        header = tk.Frame(self.gameplay_container, bg="#0d1822", padx=14, pady=6, relief="ridge", bd=1)
+        """Create a streamlined, professional industrial workstation layout."""
+        # 1. Top Header Bar: Station Branding, Mode, Timers & Controls (Clean Slate #081018)
+        header = tk.Frame(self.gameplay_container, bg="#081018", padx=10, pady=5, relief="flat", highlightthickness=1, highlightbackground="#172635")
         header.pack(fill="x")
 
-        # Pinned Prominent Home and Save buttons at top-left
+        # Pinned controls at left
         self.btn_hovedmenu = tk.Button(
-            header, text="🏠 HOVEDMENU", bg="#0284c7", fg="#ffffff", activebackground="#0369a1",
-            activeforeground="#ffffff", font=("Segoe UI", 9, "bold"), relief="raised", padx=10, pady=2,
+            header, text="🏠 MENU", bg="#0f2233", fg="#38bdf8", activebackground="#1e3a53",
+            activeforeground="#ffffff", font=("Segoe UI", 8, "bold"), relief="groove", bd=1, padx=8, pady=2,
             command=self.prompt_return_to_menu,
         )
-        self.btn_hovedmenu.pack(side="left", padx=(0, 6))
+        self.btn_hovedmenu.pack(side="left", padx=(0, 4))
 
         self.btn_quick_save = tk.Button(
-            header, text="💾 GEM", bg="#059669", fg="#ffffff", activebackground="#047857",
-            activeforeground="#ffffff", font=("Segoe UI", 9, "bold"), relief="raised", padx=10, pady=2,
+            header, text="💾 GEM", bg="#06382b", fg="#34d399", activebackground="#0b5340",
+            activeforeground="#ffffff", font=("Segoe UI", 8, "bold"), relief="groove", bd=1, padx=8, pady=2,
             command=self.quick_save,
         )
-        self.btn_quick_save.pack(side="left", padx=(0, 14))
+        self.btn_quick_save.pack(side="left", padx=(0, 10))
 
         tk.Label(
-            header, text="THE CURSE OF INSECURE PACKETS",
-            bg="#0d1822", fg="#f6d365", font=("Consolas", 12, "bold"),
+            header, text="UCL • NORDIC H2O FIELD WORKSTATION",
+            bg="#081018", fg="#f1f5f9", font=("Consolas", 11, "bold"),
         ).pack(side="left")
 
-        self.timer_label = tk.Label(
-            header, text="Dag 1/5 | Audit: --:--",
-            bg="#0d1822", fg="#f6d365", font=("Consolas", 11, "bold"),
+        # Right side status indicators
+        self.mode_btn = tk.Label(
+            header, text="🔒 Tilstand: TEACH", bg="#064e3b", fg="#6ee7b7",
+            font=("Segoe UI", 8, "bold"), relief="ridge", bd=1, padx=8, pady=2,
         )
-        self.timer_label.pack(side="right")
+        self.mode_btn.pack(side="right", padx=4)
+
+        self.support_btn = tk.Button(
+            header, text="📞 Support (3/3)", bg="#0e2336", fg="#7dd3fc",
+            font=("Segoe UI", 8, "bold"), relief="groove", bd=1, padx=8, pady=1,
+            command=lambda: self.command("techsupport"),
+        )
+        self.support_btn.pack(side="right", padx=4)
+
+        tk.Button(
+            header, text="🎯 Guide", bg="#1e293b", fg="#94a3b8",
+            font=("Segoe UI", 8, "bold"), relief="groove", bd=1, padx=8, pady=1,
+            command=self.show_guidance_window,
+        ).pack(side="right", padx=4)
+
+        self.timer_label = tk.Label(
+            header, text="Dag 1/5 | 08:00",
+            bg="#081018", fg="#f6d365", font=("Consolas", 10, "bold"), padx=6,
+        )
+        self.timer_label.pack(side="right", padx=4)
 
         self.acute_label = tk.Label(
             header, text="ℹ️ Anlæg: Aktiv overvågning",
-            bg="#0d1822", fg="#94a3b8", font=("Consolas", 11, "bold"), padx=12,
+            bg="#081018", fg="#94a3b8", font=("Consolas", 10, "bold"), padx=8,
         )
-        self.acute_label.pack(side="right", padx=10)
+        self.acute_label.pack(side="right", padx=4)
 
-        # 2. Purdue Zone Navigation Bar
-        zone_bar = tk.Frame(self.gameplay_container, bg="#101c27", padx=12, pady=4, relief="groove", bd=1)
-        zone_bar.pack(fill="x")
+        # 2. Purdue Navigation & 4-Metrics Control Strip (Collapsed into one high-density strip)
+        control_strip = tk.Frame(self.gameplay_container, bg="#0d1622", padx=10, pady=3, relief="flat", highlightthickness=1, highlightbackground="#172635")
+        control_strip.pack(fill="x")
 
-        tk.Label(
-            zone_bar, text="PURDUE ZONER:", bg="#101c27", fg="#9cbcd4",
-            font=("Segoe UI", 9, "bold"), padx=4,
-        ).pack(side="left")
-
+        # Purdue Zone buttons
         self.room_buttons: dict[str, tk.Button] = {}
         for title, key in (
             ("🚪 Indgangen (L4)", "indgangen"),
@@ -109,92 +125,65 @@ class GameApp(tk.Tk):
             ("🖥️ Kontrolrummet (IDMZ)", "kontrolrummet"),
         ):
             b = tk.Button(
-                zone_bar, text=title, bg="#16293a", fg="#d8e6ed", activebackground="#274a68",
-                relief="groove", font=("Segoe UI", 9),
+                control_strip, text=title, bg="#132130", fg="#cbd5e1", activebackground="#1e344d",
+                activeforeground="#ffffff", relief="groove", bd=1, font=("Segoe UI", 8, "bold"), padx=6, pady=2,
                 command=lambda k=key: self.navigate_to(k),
             )
-            b.pack(side="left", padx=3)
+            b.pack(side="left", padx=2)
             self.room_buttons[key] = b
 
-        # Controls on the right side of Navigation Bar (Locked mode badge + Guide + TechSupport)
-        self.mode_btn = tk.Label(
-            zone_bar, text="🔒 Tilstand: TEACH", bg="#065f46", fg="#a7f3d0",
-            font=("Segoe UI", 8, "bold"), relief="ridge", bd=1, padx=8, pady=3,
+        # Assistant Buttons on Right
+        self.sagstavle_btn = tk.Button(
+            control_strip, text="🕵️ Sagstavle", bg="#451a03", fg="#fdba74",
+            activebackground="#7c2d12", font=("Segoe UI", 8, "bold"), relief="groove", bd=1, padx=8, pady=2,
+            command=self.toggle_sagstavle,
         )
-        self.mode_btn.pack(side="right", padx=4)
+        self.sagstavle_btn.pack(side="right", padx=3)
 
         tk.Button(
-            zone_bar, text="🎯 NIS2 Guide", bg="#1e40af", fg="white",
-            font=("Segoe UI", 8, "bold"), relief="raised", padx=8, command=self.show_guidance_window,
-        ).pack(side="right", padx=4)
+            control_strip, text="☕ Hans", bg="#3b1f06", fg="#fde68a",
+            font=("Segoe UI", 8, "bold"), relief="groove", bd=1, padx=6, pady=2, command=lambda: self.command("tal med hans"),
+        ).pack(side="right", padx=2)
 
-        self.support_btn = tk.Button(
-            zone_bar, text="📞 TechSupport (3/3)", bg="#0284c7", fg="#ffffff",
-            activebackground="#0369a1", activeforeground="#ffffff",
-            font=("Segoe UI", 9, "bold"), relief="raised", padx=10,
-            command=lambda: self.command("techsupport"),
+        tk.Button(
+            control_strip, text="🎒 Rygsæk", bg="#1e293b", fg="#94a3b8",
+            font=("Segoe UI", 8, "bold"), relief="groove", bd=1, padx=6, pady=2, command=lambda: self.command("inventory"),
+        ).pack(side="right", padx=2)
+
+        # 4 Core Metrics
+        self.metric_tillid_label = tk.Label(
+            control_strip, text="🤝 Tillid: 50%", bg="#0d1622", fg="#c084fc",
+            font=("Consolas", 9, "bold"), padx=4,
         )
-        self.support_btn.pack(side="right", padx=4)
+        self.metric_tillid_label.pack(side="right")
 
-        # 3. Objective Banner
+        self.metric_compliance_label = tk.Label(
+            control_strip, text="📜 Comp: 40%", bg="#0d1622", fg="#fbbf24",
+            font=("Consolas", 9, "bold"), padx=4,
+        )
+        self.metric_compliance_label.pack(side="right")
+
+        self.metric_sikkerhed_label = tk.Label(
+            control_strip, text="🛡️ Sikkerhed: 25%", bg="#0d1622", fg="#38bdf8",
+            font=("Consolas", 9, "bold"), padx=4,
+        )
+        self.metric_sikkerhed_label.pack(side="right")
+
+        self.metric_drift_label = tk.Label(
+            control_strip, text="🔧 Drift: 80%", bg="#0d1622", fg="#4ade80",
+            font=("Consolas", 9, "bold"), padx=4,
+        )
+        self.metric_drift_label.pack(side="right")
+
+        # 3. Compact Objective Strip (1 sleek line)
         self.objective_banner = tk.Label(
-            self.gameplay_container, text="Aktuelt mål: Start ansættelsessamtale",
-            bg="#172e42", fg="#dceaf4", font=("Segoe UI", 9, "bold"),
-            padx=16, pady=3, anchor="w",
+            self.gameplay_container, text="AKTUELT MÅL: Undersøg anlægget og stabilisér zonen",
+            bg="#060c13", fg="#38bdf8", font=("Consolas", 9, "bold"),
+            padx=12, pady=2, anchor="w",
         )
         self.objective_banner.pack(fill="x")
 
-        # 3.5. Four Core Metrics & Assistant Toolbar
-        self.metrics_bar = tk.Frame(self.gameplay_container, bg="#0c1622", padx=12, pady=4, relief="ridge", bd=1)
-        self.metrics_bar.pack(fill="x")
-
-        self.metric_drift_label = tk.Label(
-            self.metrics_bar, text="🔧 Drift: 80%", bg="#0c1622", fg="#4ade80",
-            font=("Segoe UI", 9, "bold"), padx=6,
-        )
-        self.metric_drift_label.pack(side="left")
-
-        self.metric_sikkerhed_label = tk.Label(
-            self.metrics_bar, text="🛡️ Sikkerhed: 25%", bg="#0c1622", fg="#38bdf8",
-            font=("Segoe UI", 9, "bold"), padx=6,
-        )
-        self.metric_sikkerhed_label.pack(side="left")
-
-        self.metric_compliance_label = tk.Label(
-            self.metrics_bar, text="📜 Compliance: 40%", bg="#0c1622", fg="#fbbf24",
-            font=("Segoe UI", 9, "bold"), padx=6,
-        )
-        self.metric_compliance_label.pack(side="left")
-
-        self.metric_tillid_label = tk.Label(
-            self.metrics_bar, text="🤝 Tillid: 50%", bg="#0c1622", fg="#a78bfa",
-            font=("Segoe UI", 9, "bold"), padx=6,
-        )
-        self.metric_tillid_label.pack(side="left")
-
-        self.sagstavle_btn = tk.Button(
-            self.metrics_bar, text="🕵️ Sagstavle (0 spor)", bg="#7c2d12", fg="#fed7aa",
-            activebackground="#9a3412", font=("Segoe UI", 8, "bold"), relief="raised", padx=8,
-            command=self.toggle_sagstavle,
-        )
-        self.sagstavle_btn.pack(side="right", padx=4)
-
-        tk.Button(
-            self.metrics_bar, text="📋 Tilsynet", bg="#4c1d95", fg="#e9d5ff",
-            font=("Segoe UI", 8, "bold"), relief="raised", padx=8, command=lambda: self.command("ring til kirsten"),
-        ).pack(side="right", padx=4)
-
-        tk.Button(
-            self.metrics_bar, text="☕ Spørg Hans", bg="#b45309", fg="#fef3c7",
-            font=("Segoe UI", 8, "bold"), relief="raised", padx=8, command=lambda: self.command("tal med hans"),
-        ).pack(side="right", padx=4)
-
-        tk.Button(
-            self.metrics_bar, text="🎒 Rygsæk", bg="#1e293b", fg="#dceaf4",
-            font=("Segoe UI", 8, "bold"), relief="raised", padx=8, command=lambda: self.command("inventory"),
-        ).pack(side="right", padx=4)
-
-        # 4. Dedicated 2D Visual Plant Floor Screen (Static Height = 310 px in all modes)
+        # 4. Canvas maintained in memory for background and test compatibility (NOT packed on screen)
         self.map = GameCanvas(
             self.gameplay_container,
             self.engine,
@@ -202,27 +191,27 @@ class GameApp(tk.Tk):
             app=self,
             height=310,
         )
-        self.map.pack(fill="x", expand=False, padx=12, pady=(4, 2))
+        # Middle screen canvas removed per design directive: terminal now receives full vertical space!
 
-        # 4.5. Dedicated Interactive Action Panel (Clickable Choice Buttons so terminal isn't flooded)
-        self.action_panel = tk.Frame(self.gameplay_container, bg="#0b1520", padx=10, pady=5, relief="groove", bd=1)
-        self.action_panel.pack(fill="x", expand=False, padx=12, pady=(2, 2))
+        # 4.5. Dedicated Interactive Action Panel (Sleek Technical Toolbar)
+        self.action_panel = tk.Frame(self.gameplay_container, bg="#091017", padx=10, pady=6, relief="flat", highlightthickness=1, highlightbackground="#172635")
+        self.action_panel.pack(fill="x", expand=False, padx=10, pady=(4, 4))
 
         self.action_header_label = tk.Label(
             self.action_panel,
-            text="⚡ HANDLINGER I ZONEN (Klik på en knap herunder, klik på 2D-kortet foroven, eller skriv i terminalen):",
-            bg="#0b1520", fg="#f6d365", font=("Segoe UI", 8, "bold"), anchor="w",
+            text="⚡ TEKNISK VÆRKTØJSLINJE & INDGREB:",
+            bg="#091017", fg="#38bdf8", font=("Consolas", 9, "bold"), anchor="w",
         )
-        self.action_header_label.pack(fill="x", pady=(0, 3))
+        self.action_header_label.pack(fill="x", pady=(0, 4))
 
-        self.action_grid = tk.Frame(self.action_panel, bg="#0b1520")
+        self.action_grid = tk.Frame(self.action_panel, bg="#091017")
         self.action_grid.pack(fill="x")
         self.action_grid.columnconfigure(0, weight=1, uniform="act_col")
         self.action_grid.columnconfigure(1, weight=1, uniform="act_col")
 
-        # 5. Integrated Green-on-Black CRT Terminal (Takes remaining space; prompt pinned at bottom)
+        # 5. Integrated Engineer Console (Takes all remaining vertical space)
         self.terminal = TerminalWidget(self.gameplay_container, on_command=self.command)
-        self.terminal.pack(fill="both", expand=True, padx=12, pady=(2, 6))
+        self.terminal.pack(fill="both", expand=True, padx=10, pady=(2, 6))
 
     # -------------------------------------------------------------------------
     # START SCREEN & MAIN MENU UI SETUP
@@ -999,25 +988,25 @@ class GameApp(tk.Tk):
             return
 
         choices = self.engine.get_current_choices()
-        mode_str = "🎓 TEACH MODE (Hans vejleder ved fejl)" if self.engine.game_mode == "teach" else "📝 EKSAMENS-MODE (Ingen hjælp fra Hans)"
+        mode_str = "TEACH MODE (Hans vejleder)" if self.engine.game_mode == "teach" else "EKSAMEN (Blind test)"
         self.action_header_label.configure(
-            text=f"⚡ HANDLINGER I ZONEN [{mode_str}] — Klik på en knap herunder eller skriv i terminalen:"
+            text=f"⚡ TEKNISK VÆRKTØJSLINJE [{mode_str}] — Klik eller tast tal/kommando i terminalen:"
         )
 
         for idx, (key, label, cmd, _cat) in enumerate(choices[:8]):
             row = idx // 2
             col = idx % 2
             is_nav = cmd.startswith("gå til ") or cmd in {"vis rum", "luk workbench", "spring tutorial over", "sagstavle"}
-            btn_bg = "#1e293b" if is_nav else "#132a3e"
-            btn_fg = "#bae6fd" if is_nav else "#f8fafc"
-            display_lbl = f"[{key}] {label}" if len(label) <= 64 else f"[{key}] {label[:61]}..."
+            btn_bg = "#111c28" if is_nav else "#162536"
+            btn_fg = "#93c5fd" if is_nav else "#f1f5f9"
+            display_lbl = f"[{key}] {label}" if len(label) <= 66 else f"[{key}] {label[:63]}..."
             btn = tk.Button(
                 self.action_grid,
                 text=display_lbl,
                 bg=btn_bg, fg=btn_fg,
                 activebackground="#0284c7", activeforeground="white",
                 font=("Segoe UI", 8, "bold" if not is_nav else "normal"),
-                relief="raised", anchor="w", padx=8, pady=2,
+                relief="groove", bd=1, anchor="w", padx=8, pady=3,
                 command=lambda k=key: self.command(k),
             )
             btn.grid(row=row, column=col, sticky="ew", padx=3, pady=2)
@@ -1044,7 +1033,7 @@ class GameApp(tk.Tk):
             elif is_target:
                 btn.configure(text=f"{prefix}{lbl}", bg="#1e3a5f", fg="#fde047", relief="raised")
             else:
-                btn.configure(text=lbl, bg="#16293a", fg="#d8e6ed", relief="groove")
+                btn.configure(text=lbl, bg="#132130", fg="#cbd5e1", relief="groove")
 
     def update_objective(self) -> None:
         if not self.engine.running:
@@ -1063,7 +1052,7 @@ class GameApp(tk.Tk):
         if getattr(self.engine, "tutorial_active", False):
             t_step = getattr(self.engine, "tutorial_step", 1)
             step_goals = {
-                1: "Trin 1/5: Klik på 'EMALJESKILT' på 2D-skærmen eller tast [1] ('undersøg skilt')",
+                1: "Trin 1/5: Vælg [1] 'Undersøg skilt' i værktøjslinjen eller tast '1'",
                 2: "Trin 2/5: Sniff netværkstrafik i terminalen ved at taste [1] eller skrive 'tshark'",
                 3: "Trin 3/5: Åbn Sagstavlen ved at klikke på '🕵️ Sagstavle' eller taste [1] ('sagstavle')",
                 4: "Trin 4/5: Klik på det ⚠️ NYE SPOR på tavlen for at analysere det, og vælg en ⭐ Hovedmistænkt!",

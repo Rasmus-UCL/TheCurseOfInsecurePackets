@@ -140,28 +140,25 @@ class GameCanvas(tk.Canvas):
     def draw_room(self, width: int, height: int) -> None:
         current_room = ALL_ROOMS.get(self.engine.room, ALL_ROOMS["indgangen"])
 
-        # Industrial Grating Backdrop
-        self.create_rectangle(0, 0, width, height, fill="#0d1821", outline="")
-        for gy in range(65, height, 40):
-            self.create_line(0, gy, width, gy, fill="#122332", width=1)
-        for gx in range(0, width, 45):
-            self.create_line(gx, 65, gx, height, fill="#122332", width=1)
+        # Industrial Backdrop
+        self.create_rectangle(0, 0, width, height, fill="#070c12", outline="")
+        for gy in range(55, height, 38):
+            self.create_line(0, gy, width, gy, fill="#0f1924", width=1)
+        for gx in range(0, width, 42):
+            self.create_line(gx, 55, gx, height, fill="#0f1924", width=1)
 
         # Overhead Cable Tray & Header
-        self.create_rectangle(0, 0, width, 58, fill="#162736", outline="#25425c", width=1)
-        for hx in range(0, width, 28):
-            self.create_polygon(hx, 0, hx + 12, 0, hx + 4, 10, hx - 8, 10, fill="#f6d365", outline="")
-            self.create_polygon(hx + 12, 0, hx + 24, 0, hx + 16, 10, hx + 4, 10, fill="#162736", outline="")
+        self.create_rectangle(0, 0, width, 50, fill="#091119", outline="#162536", width=1)
 
         self.create_text(
-            20, 16, anchor="nw",
+            18, 10, anchor="nw",
             text=f"ZONE: {current_room.title.upper()} | {current_room.purdue_level.upper()}",
-            fill="#f6d365", font=("Consolas", 13, "bold"),
+            fill="#38bdf8", font=("Consolas", 11, "bold"),
         )
         self.create_text(
-            20, 36, anchor="nw",
+            18, 28, anchor="nw",
             text=f"Topologi: {current_room.zone}  |  Krav: IEC 62443 SL-2  |  Klik en komponent for inspektion",
-            fill="#9cbcd4", font=("Segoe UI", 9),
+            fill="#94a3b8", font=("Segoe UI", 8),
         )
 
         # Quick Workbench Action Button on Canvas
@@ -269,14 +266,14 @@ class GameCanvas(tk.Canvas):
             y2 += jy
             self.hotspot_rects[name] = (x1, y1, x2, y2)
 
-        card_bg = "#23415c" if is_selected else ("#1b354b" if is_hovered else "#132535")
-        border_color = "#38bdf8" if is_selected else ("#f6d365" if is_hovered else "#2a4d6c")
-        border_width = 3 if (is_selected or is_hovered) else 1
+        card_bg = "#101a26" if is_selected else ("#142232" if is_hovered else "#0a131c")
+        border_color = "#38bdf8" if is_selected else ("#f59e0b" if is_hovered else "#1b2c3f")
+        border_width = 2 if (is_selected or is_hovered) else 1
 
         if getattr(self.engine, "scada_blind", False) and name in {"pumpe 2", "scada"}:
-            card_bg = "#26132b" if self.anim_tick % 2 == 0 else "#1c0d20"
-            border_color = "#c084fc"
-            border_width = 3
+            card_bg = "#221118" if self.anim_tick % 2 == 0 else "#190c12"
+            border_color = "#ef4444"
+            border_width = 2
 
         self.create_rectangle(x1, y1, x2, y2, fill=card_bg, outline=border_color, width=border_width)
 
@@ -286,23 +283,20 @@ class GameCanvas(tk.Canvas):
         sub_info = ""
 
         if name == "pumpe 2":
-            icon_type = "🚰 CENTRIFUGALPUMPE"
+            icon_type = "🚰 PUMPE 2 (SPIDSLAST)"
             if getattr(self.engine, "scada_blind", False):
-                badge_text = "TRYK UKENDT (TIMEOUT)"
+                badge_text = "TIMEOUT (--.- BAR)"
                 badge_color = "#ef4444"
-                sub_info = "Mangler FC 03 allow!"
+                sub_info = "Telemetri afbrudt!"
             elif "chapter-1-done" in flags:
-                badge_text = "42 BAR (OK)"
+                badge_text = "4.2 BAR (STABIL RUN)"
                 badge_color = "#4ade80"
-                sub_info = "Stabil drift"
+                sub_info = "50.0 Hz | 142 m³/h | L7 DPI"
             else:
                 pulsing = "#ef4444" if self.anim_tick % 2 == 0 else "#f87171"
-                badge_text = "146.5 BAR (VIBRATION!)"
+                badge_text = "8.9 BAR (KAVITATION!)"
                 badge_color = pulsing
-                sub_info = "Modbus sabotage aktiv!"
-                badge_text = "146.5 BAR (ALARM)"
-                badge_color = pulsing
-                sub_info = "Modbus sabotage aktiv!"
+                sub_info = "Setpunkt 120 Hz overskrevet!"
         elif name in {"ts35 din-skinne", "din-skinne"}:
             icon_type = "🔧 MONTAGEFELT"
             if "chapter-1-done" in flags:

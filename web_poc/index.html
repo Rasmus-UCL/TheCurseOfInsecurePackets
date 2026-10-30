@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nordic H2O Utility — OT Security Field Workstation (Type A)</title>
+  <style>
+    :root {
+      --bg-dark: #070b10;
+      --bg-panel: #0d131a;
+      --bg-sub: #111a24;
+      --border: #1a2736;
+      --border-focus: #0284c7;
+      --ucl-dark: #00353c;
+      --ucl-teal: #4fd1c5;
+      --ucl-green: #00454e;
+      --amber: #f59e0b;
+      --green: #10b981;
+      --red: #ef4444;
+      --cyan: #38bdf8;
+      --text: #e2e8f0;
+      --text-dim: #64748b;
+      --font-mono: 'Consolas', 'Cascadia Code', 'Fira Code', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg-dark);
+      color: var(--text);
+      font-family: var(--font-mono);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* TOP HEADER: RÅ INDUSTRIEL WORKSTATION */
+    header {
+      background: #091017;
+      border-bottom: 2px solid var(--border);
+      padding: 8px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 52px;
+      flex-shrink: 0;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .ucl-badge {
+      background: var(--ucl-dark);
+      border: 1px solid var(--ucl-teal);
+      color: var(--ucl-teal);
+      padding: 3px 8px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 1px;
+    }
+    .station-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #f1f5f9;
+      letter-spacing: 0.5px;
+    }
+    .incident-tag {
+      font-size: 11px;
+      color: var(--amber);
+      background: rgba(245, 158, 11, 0.1);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      padding: 2px 6px;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 11px;
+    }
+    .nis2-ticker {
+      color: #fca5a5;
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      padding: 4px 8px;
+    }
+
+    /* MAIN CONTAINER: 2-ROW GRID */
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-rows: 240px 1fr;
+      gap: 6px;
+      padding: 6px;
+      overflow: hidden;
+    }
+
+    /* TOP ROW: TELEMETRY & INCIDENT DOSSIER */
+    .top-split {
+      display: grid;
+      grid-template-columns: 58% 42%;
+      gap: 6px;
+      overflow: hidden;
+    }
+
+    .panel {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .panel-hdr {
+      background: #0b1219;
+      border-bottom: 1px solid var(--border);
+      padding: 6px 12px;
+      font-size: 11px;
+      font-weight: 800;
+      color: var(--cyan);
+      display: flex;
+      justify-content: space-between;
+      letter-spacing: 0.5px;
+    }
+
+    /* TELEMETRY READOUTS (HMI) */
+    .telemetry-grid {
+      flex: 1;
+      padding: 10px 14px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      overflow-y: auto;
+      font-size: 12px;
+    }
+    .readout-card {
+      background: #090e14;
+      border: 1px solid #14202c;
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .readout-card.alarm {
+      border-color: #ef4444;
+      background: rgba(239, 68, 68, 0.05);
+    }
+    .readout-card.normal {
+      border-color: #10b981;
+    }
+    .readout-card.blind {
+      border-color: #64748b;
+      opacity: 0.6;
+    }
+    .readout-title {
+      font-size: 10px;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      font-weight: 800;
+      display: flex;
+      justify-content: space-between;
+    }
+    .readout-value {
+      font-size: 18px;
+      font-weight: 800;
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+    .status-pill {
+      font-size: 10px;
+      padding: 1px 5px;
+      border-radius: 2px;
+      font-weight: 700;
+    }
+    .pill-ok { background: #064e3b; color: #6ee7b7; }
+    .pill-alarm { background: #7f1d1d; color: #fca5a5; }
+    .pill-blind { background: #334155; color: #cbd5e1; }
+
+    /* DOSSIER READOUTS */
+    .dossier-box {
+      flex: 1;
+      padding: 10px 14px;
+      font-size: 11px;
+      line-height: 1.5;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      overflow-y: auto;
+    }
+    .dossier-entry {
+      border-bottom: 1px dashed rgba(255,255,255,0.08);
+      padding-bottom: 6px;
+    }
+    .hans-statement {
+      background: rgba(245, 158, 11, 0.08);
+      border-left: 3px solid var(--amber);
+      padding: 6px 10px;
+      font-size: 11px;
+      color: #fde68a;
+    }
+
+    /* BOTTOM ROW: DIEGETIC ENGINEER TERMINAL */
+    .terminal-container {
+      background: #05080c;
+      border: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .toolbar-bar {
+      background: #091017;
+      border-bottom: 1px solid var(--border);
+      padding: 6px 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      overflow-x: auto;
+    }
+    .tool-btn {
+      background: #111a24;
+      border: 1px solid #1f364d;
+      color: #94a3b8;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 4px 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      transition: all 0.15s;
+    }
+    .tool-btn:hover {
+      background: #1a2736;
+      border-color: var(--cyan);
+      color: #fff;
+    }
+    .tool-btn.highlight {
+      border-color: var(--ucl-teal);
+      color: var(--ucl-teal);
+    }
+
+    .term-output {
+      flex: 1;
+      padding: 12px 14px;
+      overflow-y: auto;
+      font-size: 12px;
+      line-height: 1.45;
+      color: #cbd5e1;
+    }
+    .term-line { margin: 2px 0; word-break: break-all; }
+    .term-dim { color: #64748b; }
+    .term-cyan { color: #38bdf8; }
+    .term-green { color: #4ade80; }
+    .term-amber { color: #f59e0b; }
+    .term-red { color: #f87171; }
+    .term-prompt-line {
+      display: flex;
+      align-items: center;
+      background: #080d13;
+      border-top: 1px solid var(--border);
+      padding: 8px 12px;
+      gap: 8px;
+    }
+    .prompt-label {
+      color: var(--ucl-teal);
+      font-weight: 700;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .prompt-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: #fff;
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER BAR -->
+  <header>
+    <div class="header-left">
+      <div class="ucl-badge">UCL</div>
+      <div class="station-title">OT SECURITY FIELD WORKSTATION v3.1</div>
+      <div class="incident-tag">SAG: #NIS2-DK-2026-H2O-0994 (VÆSENTLIG ENHED)</div>
+    </div>
+    <div class="header-right">
+      <div>ZONE: <strong>PUMPEHUSET (PURDUE L1/L2)</strong></div>
+      <div>DAG 1 — 09:15</div>
+      <div class="nis2-ticker">🕒 NIS2 24T FRIST: <span id="timerTxt">23t 44m 10s</span></div>
+    </div>
+  </header>
+
+  <!-- MAIN 2-ROW COCKPIT -->
+  <main>
+
+    <!-- ROW 1: SPLIT TELEMETRY & INCIDENT DOSSIER -->
+    <div class="top-split">
+
+      <!-- PANE 1: HMI TELEMETRI -->
+      <section class="panel">
+        <div class="panel-hdr">
+          <span>📊 ANLÆGSTELEMETRI &amp; MASKINSTATUS [HMI]</span>
+          <span id="hmiOverallPill" class="status-pill pill-alarm">1 AKUT ALARM</span>
+        </div>
+        <div class="telemetry-grid">
+
+          <!-- PUMP 1 -->
+          <div class="readout-card normal">
+            <div class="readout-title">
+              <span>Pumpe 1 (Grundlast)</span>
+              <span class="status-pill pill-ok">RUN</span>
+            </div>
+            <div class="readout-value">
+              <span style="color:#4ade80;">4.2</span>
+              <span style="font-size:11px;color:#94a3b8;">Bar (42.0m VS)</span>
+            </div>
+            <div style="font-size:10px;color:#64748b;">Frekvens: 50.0 Hz | Flow: 142 m³/h</div>
+          </div>
+
+          <!-- PUMP 2 -->
+          <div class="readout-card alarm" id="cardPump2">
+            <div class="readout-title">
+              <span>Pumpe 2 (Spidslast)</span>
+              <span id="pillPump2" class="status-pill pill-alarm">KAVITATION</span>
+            </div>
+            <div class="readout-value">
+              <span id="valPump2" style="color:#f87171;">8.9</span>
+              <span id="unitPump2" style="font-size:11px;color:#f87171;">Bar (PULSERER)</span>
+            </div>
+            <div id="subPump2" style="font-size:10px;color:#f87171;">Setpunkt overskrevet: 120.0 Hz!</div>
+          </div>
+
+          <!-- S7-1500 PLC -->
+          <div class="readout-card normal" id="cardPlc">
+            <div class="readout-title">
+              <span>Siemens S7-1500 F-PLC</span>
+              <span class="status-pill pill-ok" id="pillPlc">RUN</span>
+            </div>
+            <div class="readout-value">
+              <span style="color:#38bdf8;">0x0000</span>
+              <span style="font-size:11px;color:#94a3b8;">NO_ERROR</span>
+            </div>
+            <div style="font-size:10px;color:#64748b;">IP: 192.168.20.1 | DB1: VALID | OB35: 100ms</div>
+          </div>
+
+          <!-- SCADA TELEMETRY CONDUIT LINK -->
+          <div class="readout-card normal" id="cardScadaLink">
+            <div class="readout-title">
+              <span>SCADA Telemetrilink</span>
+              <span class="status-pill pill-ok" id="pillScadaLink">ONLINE</span>
+            </div>
+            <div class="readout-value">
+              <span id="valScadaLink" style="color:#38bdf8;">TCP 502</span>
+              <span style="font-size:11px;color:#94a3b8;">PORT STATUS</span>
+            </div>
+            <div id="subScadaLink" style="font-size:10px;color:#64748b;">SCALANCE S615 -> VFD Aqua Drive</div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- PANE 2: INCIDENT & NIS2 DOSSIER -->
+      <section class="panel">
+        <div class="panel-hdr">
+          <span>📜 INCIDENT DOSSIER &amp; RETLIG STATUS</span>
+          <span style="color:#f59e0b;">NIS2 ART. 21 / 23</span>
+        </div>
+        <div class="dossier-box">
+          <div class="dossier-entry">
+            <div><strong>Hændelse:</strong> Uautoriseret proces-manipulation på Modbus TCP (Port 502)</div>
+            <div style="color:#94a3b8;font-size:10px;">Awareness registreret: Dag 1, kl. 08:00 | Lovpligtig frist: Dag 2, kl. 08:00</div>
+          </div>
+          <div class="dossier-entry" style="display:flex;justify-content:space-between;">
+            <span>24t Early Warning indsendt: <strong id="dosWarning" style="color:#f87171;">NEJ</strong></span>
+            <span>Chain of Custody spor: <strong>2/11</strong></span>
+          </div>
+          <div class="hans-statement" id="hansBox">
+            <strong>🔧 Driftstekniker Hans McDonald:</strong><br>
+            "Pumpe 2 ryster helt vildt! En eller anden ukendt IP-adresse pumper skrive-kommandoer (FC 06) direkte ind i omformeren. Undersøg trafikken med tshark og få konfigureret firewallen rigtigt!"
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- ROW 2: DIEGETIC ENGINEER TERMINAL & WORKBENCH -->
+    <section class="terminal-container">
+      <div class="toolbar-bar">
+        <span style="font-size:10px;color:#64748b;font-weight:700;">HURTIG-KOMMANDOER:</span>
+        <button class="tool-btn highlight" onclick="execCmd('tshark -Y modbus')">📊 tshark -Y "modbus"</button>
+        <button class="tool-btn" onclick="execCmd('firewall status')">🛡️ firewall status</button>
+        <button class="tool-btn" onclick="execCmd('firewall rule add --allow-fc 3 --drop-fc 6')">⚙️ firewall rule add --allow-fc 3 --drop-fc 6</button>
+        <button class="tool-btn" onclick="execCmd('firewall rule add --drop-port 502')">⚡ firewall rule add --drop-port 502</button>
+        <button class="tool-btn" onclick="execCmd('netværk status')">🌐 netværk status</button>
+        <button class="tool-btn" onclick="execCmd('sagstavle')">🕵️ sagstavle</button>
+        <button class="tool-btn" onclick="execCmd('indberet nis2')">📋 indberet nis2</button>
+        <button class="tool-btn" onclick="execCmd('hjælp')">❓ hjælp</button>
+      </div>
+
+      <div class="term-output" id="termOutput">
+        <div class="term-line term-dim">========================================================================================</div>
+        <div class="term-line term-cyan">  NORDIC H2O FIELD DIAGNOSTIC TERMINAL — OT SIKKERHEDSKONSULENT SHELL v3.1</div>
+        <div class="term-line term-dim">  Forbundet til anlæggets servicenetværk via SCALANCE S615 spejlport (eth0).</div>
+        <div class="term-line term-dim">========================================================================================</div>
+        <div class="term-line term-amber">⚠️ ADVARSEL: Unormal proces-afvigelse på Pumpe 2. Kør 'tshark -Y "modbus"' for trafikanalyse.</div>
+        <div class="term-line term-dim">Tast en kommando eller klik på hurtig-knapperne ovenfor.</div>
+        <div class="term-line">&nbsp;</div>
+      </div>
+
+      <div class="term-prompt-line">
+        <span class="prompt-label">konsulent@nordic-h2o:~$</span>
+        <input type="text" class="prompt-input" id="termInput" autofocus placeholder="Skriv kommando (f.eks. 'tshark -Y modbus' eller 'firewall status')...">
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    // System State
+    let firewallMode = 'open'; // 'open', 'dpi', 'drop502'
+    let earlyWarningSent = false;
+
+    const termOutput = document.getElementById('termOutput');
+    const termInput = document.getElementById('termInput');
+
+    function printLine(text, className = '') {
+      const div = document.createElement('div');
+      div.className = 'term-line ' + className;
+      div.innerHTML = text;
+      termOutput.appendChild(div);
+      termOutput.scrollTop = termOutput.scrollHeight;
+    }
+
+    function execCmd(rawCmd) {
+      const cmd = rawCmd.trim();
+      if (!cmd) return;
+      printLine('<span class="term-cyan">konsulent@nordic-h2o:~$</span> ' + cmd);
+
+      const c = cmd.toLowerCase();
+
+      if (c === 'hjælp' || c === 'help') {
+        printLine('TILGÆNGELIGE OT-KOMMANDOER:', 'term-amber');
+        printLine('  tshark -Y &quot;modbus&quot;                  Snif og analyser Modbus TCP-pakker på port 502');
+        printLine('  firewall status                     Vis aktuelle regler på SCALANCE S615 routeren');
+        printLine('  firewall rule add --allow-fc 3 --drop-fc 6   Konfigurer L7 Modbus Deep Packet Inspection');
+        printLine('  firewall rule add --drop-port 502   Drop samtlige TCP 502 pakker (Layer 3 portblokering)');
+        printLine('  firewall reset                      Nulstil firewall til standard (Tillad alt)');
+        printLine('  netværk status                      Inspicér Purdue zoner og kabling');
+        printLine('  sagstavle                           Vis mistænkte profiler og tekniske spor');
+        printLine('  indberet nis2                       Indsend lovpligtig 24t Early Warning til Tilsynet');
+        printLine('  clear                               Ryd terminalen');
+      }
+      else if (c.startsWith('tshark')) {
+        printLine('STARTER PAKKEANALYSE PÅ ETH0 (PROMISCUOUS MODE) [Filter: tcp.port == 502]...', 'term-cyan');
+        if (firewallMode === 'open') {
+          printLine('09:15:01.102  192.168.10.10 -> 192.168.20.50  Modbus/TCP 58  Query: Read Holding Regs (FC 03) Reg: 0x0001 Len: 2', 'term-green');
+          printLine('09:15:01.118  192.168.20.50 -> 192.168.10.10  Modbus/TCP 62  Response: Read Holding Regs (FC 03) Data: 0x01a4', 'term-green');
+          printLine('09:15:01.420  192.168.10.99 -> 192.168.20.50  Modbus/TCP 66  [SABOTAGE] Query: Write Single Reg (FC 06) Reg: 0x0064 Val: 12000 (120 Hz!)', 'term-red');
+          printLine('09:15:01.435  192.168.20.50 -> 192.168.10.99  Modbus/TCP 66  Response: Write Single Reg (FC 06) Acknowledged', 'term-red');
+          printLine('💡 ANALYSE: En ukendt kilde-IP (192.168.10.99) overskriver frekvensomformerens setpunkt via FC 06!', 'term-amber');
+        } else if (firewallMode === 'dpi') {
+          printLine('09:15:02.105  192.168.10.10 -> 192.168.20.50  Modbus/TCP 58  Query: Read Holding Regs (FC 03) Reg: 0x0001 Len: 2', 'term-green');
+          printLine('09:15:02.119  192.168.20.50 -> 192.168.10.10  Modbus/TCP 62  Response: Read Holding Regs (FC 03) Data: 0x01a4 (42.0 Bar)', 'term-green');
+          printLine('09:15:02.418  192.168.10.99 -> 192.168.20.50  Modbus/TCP 66  [FIREWALL DROP] FC 06 Write Reg 0x0064 afvist af regel #01', 'term-dim');
+          printLine('✅ L7 DPI AKTIV: Kun SCADA telemetri (FC 03) slipper igennem. Angrebspakker droppes i stilhed!', 'term-green');
+        } else {
+          printLine('⚠️ INGEN TRAFIK DETEKTERET: Port 502 er fuldstændig blokeret. SCADA telemetri er afbrudt!', 'term-red');
+        }
+      }
+      else if (c === 'firewall status') {
+        printLine('[SCALANCE S615 CONFIGURATION DUMP]', 'term-cyan');
+        printLine('  Interface P1 (LAN): 192.168.20.1/24 (Zone 1: Feltbus)');
+        printLine('  Interface P5 (WAN): 192.168.10.1/24 (Zone 2: Anlægsnet)');
+        if (firewallMode === 'open') {
+          printLine('  Aktiv Policy: PERMIT ALL (Ufiltreret Modbus TCP drift)', 'term-red');
+        } else if (firewallMode === 'dpi') {
+          printLine('  Aktiv Policy: L7 MODBUS DEEP PACKET INSPECTION (Whitelist FC 03, Drop FC 06/16)', 'term-green');
+          printLine('  Statistik: 4,120 pakker tilladt (FC03), 142 angrebspakker afvist (FC06).', 'term-dim');
+        } else {
+          printLine('  Aktiv Policy: LAYER 3 PORT DROP (TCP 502 -> DROP ALL)', 'term-amber');
+          printLine('  Statistik: 100% af Modbus-trafik blokeret (Inklusiv lovpligtig SCADA-overvågning).', 'term-red');
+        }
+      }
+      else if (c.includes('allow-fc 3') && c.includes('drop-fc 6')) {
+        firewallMode = 'dpi';
+        printLine('🔄 Anvender L7 Modbus DPI regel på SCALANCE S615...', 'term-cyan');
+        printLine('  -> Whitelister Modbus Function Code 03 (Read Holding Registers)', 'term-dim');
+        printLine('  -> Afviser og logger Modbus Function Code 06 & 16 (Write Registers)', 'term-dim');
+        printLine('✅ REGEL GEMT I NVRAM OG AKTIVERET I KERNEL FIREWALL!', 'term-green');
+        updatePlantState();
+      }
+      else if (c.includes('drop-port 502')) {
+        firewallMode = 'drop502';
+        printLine('⚠️ Anvender generel Layer 3 regel på SCALANCE S615: DROP TCP 502...', 'term-amber');
+        printLine('❌ ADVARSEL: Port 502 er nu spærret for samtlige værter.', 'term-red');
+        updatePlantState();
+      }
+      else if (c.includes('reset')) {
+        firewallMode = 'open';
+        printLine('Nulstiller firewall til fabrikstilstand (PERMIT ALL)...', 'term-amber');
+        updatePlantState();
+      }
+      else if (c.includes('indberet nis2') || c.includes('indberet')) {
+        if (!earlyWarningSent) {
+          earlyWarningSent = true;
+          printLine('📋 [NIS2 ARTIKEL 23.2.a OVERHOLDT]:', 'term-green');
+          printLine('  Tidlig Advarsel (Early Warning) for sag #NIS2-DK-2026-H2O-0994 indsendt til CSIRT / Tilsynet.', 'term-green');
+          printLine('  Overholdt inden for 24 timer fra detektering (Indsendt 1t 15m efter alarm).', 'term-dim');
+          document.getElementById('dosWarning').textContent = 'JA (OVERHOLDT)';
+          document.getElementById('dosWarning').style.color = '#34d399';
+        } else {
+          printLine('ℹ️ Du har allerede indsendt 24-timers Early Warning for denne hændelse.', 'term-dim');
+        }
+      }
+      else if (c === 'sagstavle') {
+        printLine('=== EFTERFORSKNINGENS SAGSTAVLE ===', 'term-amber');
+        printLine('  [1] Lars Kofoed (Tidligere automationstekniker) — Mistanke: 65%');
+        printLine('      Spor: Ubeskyttet TIA V16 backup fundet i el-tavlen. DB1 struktur identisk.');
+        printLine('  [2] Morten Vestergaard (Pumpe-leverandør) — Mistanke: 45%');
+        printLine('      Spor: Rødt USB-stik og tilbud på akut serviceaftale til 1,8 mio. kr.');
+      }
+      else if (c === 'clear') {
+        termOutput.innerHTML = '';
+      }
+      else {
+        printLine('Kommando ikke genkendt: &quot;' + cmd + '&quot;. Tast &quot;hjælp&quot; for oversigt over OT-værktøjer.', 'term-dim');
+      }
+      printLine('&nbsp;');
+    }
+
+    function updatePlantState() {
+      const cardP2 = document.getElementById('cardPump2');
+      const pillP2 = document.getElementById('pillPump2');
+      const valP2 = document.getElementById('valPump2');
+      const unitP2 = document.getElementById('unitPump2');
+      const subP2 = document.getElementById('subPump2');
+
+      const cardScada = document.getElementById('cardScadaLink');
+      const pillScada = document.getElementById('pillScadaLink');
+      const valScada = document.getElementById('valScadaLink');
+      const subScada = document.getElementById('subScadaLink');
+
+      const overallPill = document.getElementById('hmiOverallPill');
+      const hansBox = document.getElementById('hansBox');
+
+      if (firewallMode === 'dpi') {
+        cardP2.className = 'readout-card normal';
+        pillP2.className = 'status-pill pill-ok';
+        pillP2.textContent = 'RUN';
+        valP2.style.color = '#4ade80';
+        valP2.textContent = '4.2';
+        unitP2.style.color = '#94a3b8';
+        unitP2.textContent = 'Bar (42.0m VS)';
+        subP2.style.color = '#64748b';
+        subP2.textContent = 'Frekvens: 50.0 Hz | Stabil hydraulisk drift';
+
+        cardScada.className = 'readout-card normal';
+        pillScada.className = 'status-pill pill-ok';
+        pillScada.textContent = 'DPI SIKRET';
+        valScada.textContent = 'TCP 502';
+        valScada.style.color = '#38bdf8';
+        subScada.textContent = 'L7 DPI aktiv: Whitelist FC03 (Drop FC06)';
+
+        overallPill.className = 'status-pill pill-ok';
+        overallPill.textContent = 'ALLE SYSTEMER NORMALE';
+
+        hansBox.innerHTML = '<strong>🔧 Driftstekniker Hans McDonald:</strong><br>"Hold da op! Trykket faldt direkte på plads til 4.2 Bar, og vibrationerne stoppede med det samme! Du blokerede skrive-sabotagen uden at blinde SCADA. Genialt arbejde!"';
+      }
+      else if (firewallMode === 'drop502') {
+        cardP2.className = 'readout-card blind';
+        pillP2.className = 'status-pill pill-blind';
+        pillP2.textContent = 'OFFLINE';
+        valP2.style.color = '#64748b';
+        valP2.textContent = '--.-';
+        unitP2.style.color = '#64748b';
+        unitP2.textContent = 'Bar (INGEN DATA)';
+        subP2.style.color = '#ef4444';
+        subP2.textContent = 'SCADA forbindelse afbrudt!';
+
+        cardScada.className = 'readout-card alarm';
+        pillScada.className = 'status-pill pill-alarm';
+        pillScada.textContent = 'DROPPED';
+        valScada.textContent = 'BLOKERET';
+        valScada.style.color = '#ef4444';
+        subScada.textContent = 'Grov L3 portblokering på port 502';
+
+        overallPill.className = 'status-pill pill-alarm';
+        overallPill.textContent = 'SCADA TELEMETRI MISTET';
+
+        hansBox.innerHTML = '<strong>🔧 Driftstekniker Hans McDonald:</strong><br>"Hov hov! Hvad skete der lige der?! Skærmen gik i sort for Pumpe 2! Vi har mistet al telemetri til anlægget! Du kan ikke bare slukke hele port 502, for så kan SCADA jo heller ikke læse trykket!"';
+      }
+      else {
+        cardP2.className = 'readout-card alarm';
+        pillP2.className = 'status-pill pill-alarm';
+        pillP2.textContent = 'KAVITATION';
+        valP2.style.color = '#f87171';
+        valP2.textContent = '8.9';
+        unitP2.style.color = '#f87171';
+        unitP2.textContent = 'Bar (PULSERER)';
+        subP2.style.color = '#f87171';
+        subP2.textContent = 'Setpunkt overskrevet: 120.0 Hz!';
+
+        cardScada.className = 'readout-card normal';
+        pillScada.className = 'status-pill pill-ok';
+        pillScada.textContent = 'ONLINE';
+        valScada.textContent = 'TCP 502';
+        valScada.style.color = '#38bdf8';
+        subScada.textContent = 'SCALANCE S615 -> VFD Aqua Drive';
+
+        overallPill.className = 'status-pill pill-alarm';
+        overallPill.textContent = '1 AKUT ALARM';
+
+        hansBox.innerHTML = '<strong>🔧 Driftstekniker Hans McDonald:</strong><br>"Pumpe 2 ryster helt vildt! En eller anden ukendt IP-adresse pumper skrive-kommandoer (FC 06) direkte ind i omformeren. Undersøg trafikken med tshark og få konfigureret firewallen rigtigt!"';
+      }
+    }
+
+    termInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const val = termInput.value;
+        termInput.value = '';
+        execCmd(val);
+      }
+    });
+
+    // NIS2 Timer
+    let sec = 23 * 3600 + 44 * 60 + 10;
+    setInterval(() => {
+      if (sec > 0) sec--;
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = sec % 60;
+      document.getElementById('timerTxt').textContent = `${h}t ${m.toString().padStart(2, '0')}m ${s.toString().padStart(2, '0')}s`;
+    }, 1000);
+  </script>
+</body>
+</html>
