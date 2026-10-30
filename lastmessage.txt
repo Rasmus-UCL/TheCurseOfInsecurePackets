@@ -1,0 +1,28 @@
+1, efter vi har lavet dynamisk missionspack er der en fejl på start  skærmen der introducere en med at man ankommer
+  til H2O Utility og der er fejl på pumpe 2. dette skal skrives om så det beskriver lidt mere spillet og ikke siger
+  hvilke udfordringer der kommer. der må gerne sige at revisor kirsten har indledt et NIS2 tilsyn.
+  2. i fanen Om spillet. skrives der om spillet og lore ? Hvad betyder Lore ?
+  3. tænker også denne skal opdateres efter vores dynamiske missionpack
+  4. man kan ikke se om man vælger teach mode eller exams mode og det skal være et valg man kun kan vælge fra start
+  menuen ikke inde i spillet.
+  5.Når man afslutter tutorial siger den at man træder ind i pumpehuset dette skal også ændres da vi arbejder med
+  dynamiske missioner.
+  6. sagstavlen bliver ikke renset efter tutorial hvilket den skal ellers blandes det sammen med resten af spille med
+  mindre du har gjort så det hænger sammen.
+  7. i forhold til mistænkte er det fint der er en procent bar og at der står at der er x antal beviser mod mistænkte
+  men i exams mode skal dette ikke være der.
+  8.Der bliver brugt Konsulent som navn ved revisor kirsten her skal vi bruge det navn som spillet er startet med.
+  9. kirsten siger: Kirsten nikker alvorligt og aktiverer den nationale CSIRT-forbindelse:
+  "Dine retsmedicinske beviser og tshark-captures matcher 100% Europol-signaturerne for trusselsaktøren ShadowH2O.
+  Fordi du sikrede implantatet i en Faraday-pose og lukkede IDMZ-bagdøren i tide, har Center for Cybersikkerhed
+  kunnet neutralisere deres C2-infrastruktur. Forbilledligt arbejde, konsulent!"
+  ved ikke helt om jeg vil kalde det for retsmedicinske beviser :)
+  10. Når man så har fremlagt sagen og gennemføre nis2 revisionen siger kirsten goddag, men her har vi allerede snakket
+  med hende så der bliver nok nød til at være noget lidt mere dynamisk i snakken som gør at man enten kan tage den ene
+  eller den anden vej uden at teksten siger goddag 2 gange osv.
+  11. der ud over tror jeg godt at dags timeren kan reduceres yderliger så dagene går lidt hurtigere og så er der det
+  med at 24 timers reglen artikel 23 som jeg også syntes vi skal huske at have med så når man har fikset et
+  problem/udfordring kan have muligheden for om det skal inberettes. hvis det er forkert at inberette bliver kirsten
+  sur. ellers bliver hun glad for beskeden, og det har jo selvfølgelig en indvirken på den afsluttende report.
+  12. kan man afslutningsvis evt. åbne reporten op i et nyt vindue hvor reporten er formateret pænt med et UCL logo osv.
+  på jeg skal nok finde logoet til dig hvis det er, samt skal man så kunne gemme den på sin komputer her fra.
