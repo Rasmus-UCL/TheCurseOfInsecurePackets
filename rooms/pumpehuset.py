@@ -81,20 +81,20 @@ class PumpehusetRoom(BaseRoom):
                 choices.append(("2", "🚪 Luk arbejdsbænken og vend tilbage til Pumpehuset", "vis rum", "normal"))
                 return choices
             if not getattr(engine, "vfd_cabled", False) or getattr(engine, "wrong_cabling", False):
-                choices.append(("1", "🔀 [Trin 2/3] Forbind VFD til LAN-port (P1) og anlægsnetværk til WAN-port (P5)", "kobl kabler til scalance", "primary"))
+                choices.append(("1", "🔀 [Trin 2/3] Forbind VFD til LAN-port (P1) og anlægsnetværk til WAN-port (P5)", "kobl kabler til scalance", "normal"))
                 choices.append(("2", "🔀 [Trin 2/3] Forbind VFD til WAN-port (P5) og anlægsnetværk til LAN-port (P1)", "byt om på lan og wan", "normal"))
                 choices.append(("3", "🚪 Luk arbejdsbænken og vend tilbage til Pumpehuset", "vis rum", "normal"))
                 return choices
             if variant == "B":
-                choices.append(("1", "🛡️ [Trin 3/3] Spær SNMPv1 Write ('private'), aktivér ARP Inspection (DAI) og tillad SCADA FC 03", "firewall rule add --allow-fc 3 --drop-fc 6", "primary"))
-                choices.append(("2", "🛡️ [Trin 3/3] Blokér al trafik på SCALANCE uden whitelist til SCADA-telemetri", "firewall rule add --drop-fc 6", "normal"))
+                choices.append(("1", "🛡️ [Trin 3/3] Konfigurer SNMP & ARP beskyttelse: Spær SNMPv1 Write ('private'), aktivér DAI og tillad SCADA FC 03", "firewall rule add --allow-fc 3 --drop-fc 6", "normal"))
+                choices.append(("2", "🛡️ [Trin 3/3] Konfigurer grov afvisning: Blokér al trafik på SCALANCE uden whitelist til SCADA-telemetri", "firewall rule add --drop-fc 6", "normal"))
             elif variant == "C":
-                choices.append(("1", "🛡️ [Trin 3/3] Spær ukrypteret HTTP Port 80, lås VFD-setpunkt til PLC og tillad SCADA FC 03", "firewall rule add --allow-fc 3 --drop-fc 6", "primary"))
-                choices.append(("2", "🛡️ [Trin 3/3] Blokér al trafik på SCALANCE uden whitelist til SCADA-telemetri", "firewall rule add --drop-fc 6", "normal"))
+                choices.append(("1", "🛡️ [Trin 3/3] Konfigurer HTTP & Modbus beskyttelse: Spær port 80 web-interface, lås setpunkt til PLC og tillad SCADA FC 03", "firewall rule add --allow-fc 3 --drop-fc 6", "normal"))
+                choices.append(("2", "🛡️ [Trin 3/3] Konfigurer grov afvisning: Blokér al trafik på SCALANCE uden whitelist til SCADA-telemetri", "firewall rule add --drop-fc 6", "normal"))
             else:
-                choices.append(("1", "🛡️ [Trin 3/3] Opret regel: 'firewall rule add --allow-fc 3 --drop-fc 6'", "firewall rule add --allow-fc 3 --drop-fc 6", "primary"))
-                choices.append(("2", "🛡️ [Trin 3/3] Opret regel: 'firewall rule add --drop-fc 6'", "firewall rule add --drop-fc 6", "normal"))
-            choices.append(("3", "🔀 Ændr kabling: Forbind VFD til WAN-port (P5) og anlægsnetværk til LAN-port (P1)", "byt om på lan og wan", "normal"))
+                choices.append(("1", "🛡️ [Trin 3/3] Konfigurer Modbus L7 DPI regel: Whitelist SCADA telemetri (FC 03 Read), afvis uautoriseret parameterstyring (FC 06/16 Write)", "firewall rule add --allow-fc 3 --drop-fc 6", "normal"))
+                choices.append(("2", "🛡️ [Trin 3/3] Konfigurer grov Modbus-afvisning: Drop al Modbus Write (FC 06/16) uden eksplicit whitelist til SCADA telemetri", "firewall rule add --drop-fc 6", "normal"))
+            choices.append(("3", "🔀 Byt om på kabling: Forbind VFD til WAN-port (P5) og anlægsnetværk til LAN-port (P1)", "byt om på lan og wan", "normal"))
             choices.append(("4", "🚪 Luk arbejdsbænken og vend tilbage til Pumpehuset", "vis rum", "normal"))
             return choices
 
@@ -107,7 +107,7 @@ class PumpehusetRoom(BaseRoom):
             else:
                 choices.append(("2", "📊 Kør tshark og overvåg Modbus TCP-trafik på port 502", "tshark -Y \"modbus\"", "normal"))
             choices.append(("3", "☕ Spørg Hans om nylige servicebesøg på pumperne", "spørg hans om morten", "normal"))
-            choices.append(("4", "🔧 Åbn arbejdsbænk for TS35 DIN-skinne & SCALANCE S615 firewall", "firewall workbench", "primary"))
+            choices.append(("4", "🔧 Åbn arbejdsbænk for TS35 DIN-skinne & SCALANCE S615 firewall", "firewall workbench", "normal"))
             choices.append(("5", "🛡️ Blokér al TCP port 502 trafik i netværket med en generel regel", "bloker port 502", "normal"))
             choices.append(("6", "⚡ Afbryd forsyningen til frekvensomformeren på hovedafbryderen", "hård nødnedlukning af vfd", "normal"))
             return choices

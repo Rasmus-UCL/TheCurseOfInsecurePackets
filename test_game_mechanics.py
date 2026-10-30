@@ -2,6 +2,7 @@
 
 import os
 import sys
+import time
 
 from core.engine import GameEngine
 from core.forensics import ForensicsManager
@@ -286,6 +287,12 @@ def test_incident_reporting_and_audit():
     assert "Søren" in content
     assert "Artikel 21" in content
     assert "Artikel 23" in content
+    assert "Karakter" in content
+    assert "Gennemførte Hærdningstiltag" in content
+    assert "Driftsmæssige & Sikkerhedsmæssige Fejltrin" in content
+    assert "Chefinspektør Kirsten" in content
+    assert "Hans McDonald" in content
+    assert engine.last_audit_grade in {"12", "10", "7", "4", "02", "00", "-3"}
     print("  -> Passed.")
 
 
@@ -867,6 +874,42 @@ def test_etape2_modular_campaign_variants_and_culprits():
     print("  -> Passed.")
 
 
+def test_dynamic_adaptive_day_timer():
+    print("Test 17: Dynamic Adaptive Day Timer & Crash Bandicoot DDA pacing...")
+    logs = []
+    engine = GameEngine(output=logs.append)
+    assert engine.base_day_seconds == 75.0
+    assert engine.day_pace_multiplier == 1.0
+    assert engine.day_seconds == 75.0
+
+    # Test baseline setter
+    engine.set_base_day_seconds(60)
+    assert engine.base_day_seconds == 60.0
+    assert engine.day_seconds == 60.0
+
+    # Reset to 75s
+    engine.set_base_day_seconds(75)
+
+    # Test rapid high-performance progression (Crash Bandicoot acceleration)
+    engine.start("Spiller", "UCL")
+    engine.chapter_started_at = time.monotonic() - 25.0  # 25 seconds (fast)
+    engine.metrics.drift = 85
+    engine.metrics.compliance = 85
+    engine.evaluate_adaptive_difficulty()
+    assert engine.day_pace_multiplier > 1.0
+    assert engine.day_seconds < 75.0  # Days tick faster
+
+    # Test struggling performance progression (Crash Bandicoot deceleration / breathing room)
+    engine.day_pace_multiplier = 1.0
+    engine.chapter_started_at = time.monotonic() - 95.0  # 95 seconds (slow)
+    engine.metrics.compliance = 40
+    engine.evaluate_adaptive_difficulty()
+    assert engine.day_pace_multiplier < 1.0
+    assert engine.day_seconds > 75.0  # Days tick slower to give extra time
+
+    print("  -> Passed.")
+
+
 if __name__ == "__main__":
     test_purdue_and_iec()
     test_sniffer_and_wireshark()
@@ -884,4 +927,5 @@ if __name__ == "__main__":
     test_save_and_load_persistence()
     test_interactive_tutorial_and_active_clue_analysis()
     test_etape2_modular_campaign_variants_and_culprits()
+    test_dynamic_adaptive_day_timer()
     print("\nALL MECHANICS TESTS PASSED SUCCESSFULLY! [OK]")

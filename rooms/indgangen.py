@@ -85,6 +85,13 @@ class IndgangenRoom(BaseRoom):
                     f"\"Så er vi nået til selve NIS2 Artikel 21 & 23 gennemgangen af anlæggets zoner, {player_name}. "
                     f"Vælg [1] ('revisor') når du er klar til at modtage Tilsynets samlede afgørelse og åbne revisionsrapporten.\""
                 )
+            if "kirsten-greeted" in flags:
+                return (
+                    f"Du står igen foran skranken i Hovedindgangen hos Tilsynets chefinspektør Kirsten og Hans McDonald.\n"
+                    f"Kirsten kigger op fra sit tablet med et bestemt blik:\n"
+                    f"\"Velkommen tilbage til revisionen, {player_name}. Som aftalt mangler vi nu den afsluttende vurdering: "
+                    f"Har du udpeget din hovedmistænkte på Sagstavlen, eller vil du gå direkte til det endelige NIS2 audit-dekret?\""
+                )
             flags.add("kirsten-greeted")
             return (
                 "Du træder ind i Hovedindgangen. Udenfor siler en kold efterårsregn ned over anlæggets rørbroer. "

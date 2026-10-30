@@ -103,7 +103,7 @@ class VentilOenRoom(BaseRoom):
                     choices.append(("2", "📊 Kør tshark og overvåg ukrypteret MQTT-trafik på port 1883", "åbn wireshark", "normal"))
                 else:
                     choices.append(("2", "📊 Kør tshark og overvåg Layer 2 PROFINET DCP-broadcasts", "åbn wireshark", "normal"))
-                choices.append(("3", "🔦 Undersøg kabelbakke K-04 bag ventilstativerne for skjult kabling", "undersøg kabelbakke", "primary"))
+                choices.append(("3", "🔦 Undersøg kabelbakke K-04 bag ventilstativerne for skjult kabling", "undersøg kabelbakke", "normal"))
                 choices.append(("4", "☕ Spørg Hans om tidligere netværksændringer på ventil-øen", "spørg hans om lars", "normal"))
                 choices.append(("5", "🔌 Afbryd D-Link switchen ved at trække alle patchkabler ud med det samme", "pille switch fra", "normal"))
                 return choices
@@ -118,7 +118,7 @@ class VentilOenRoom(BaseRoom):
                 return choices
 
             # Implant removed, now fix the switch
-            choices.append(("1", "🔄 Monter SCALANCE XB-200 managed switch og etabler redundant PROFINET MRP-ring", "udskift switch med scalance", "primary"))
+            choices.append(("1", "🔄 Monter SCALANCE XB-200 managed switch og etabler redundant PROFINET MRP-ring", "udskift switch med scalance", "normal"))
             choices.append(("2", "📊 Verificer med tshark om netværks-sabotagen er ophørt", "åbn wireshark", "normal"))
             choices.append(("3", "🕵️ Åbn Sagstavlen og analyser de nye spor", "sagstavle", "normal"))
             return choices

@@ -50,7 +50,13 @@ def test_gui():
         assert not any("Faldgrube" in lbl for _k, lbl, _c, _cat in teach_choices)
         assert not any("Guldstandard" in lbl for _k, lbl, _c, _cat in teach_choices)
 
+        # In-game toggle is locked (cannot be changed mid-game)
         app.toggle_mode()
+        assert app.engine.game_mode == "teach"
+        assert "LÅST" in app.terminal.text.get("1.0", "end")
+
+        # Test Exam mode via programmatic setter
+        app.set_game_mode("exam")
         assert app.engine.game_mode == "exam"
         assert "EKSAMEN" in app.mode_btn.cget("text")
         exam_choices = app.engine.get_current_choices()
@@ -59,7 +65,7 @@ def test_gui():
         assert not any("Anbefalet" in lbl for _k, lbl, _c, _cat in exam_choices)
 
         # Switch back to teach mode
-        app.toggle_mode()
+        app.set_game_mode("teach")
         assert app.engine.game_mode == "teach"
 
         # Step 7: Test Canvas Click on DIN-skinne hotspot opens workbench directly
@@ -91,7 +97,7 @@ def test_gui():
 
         # Step 8B: In Exam Mode, wrong cabling executes on workbench
         print("  -> Testing Exam Mode: wrong cabling executes on workbench...")
-        app.toggle_mode()
+        app.set_game_mode("exam")
         assert app.engine.game_mode == "exam"
         wb_choices = app.engine.get_current_choices()
         wrong_key = [k for k, _l, cmd, _c in wb_choices if cmd == "byt om på lan og wan"][0]
@@ -117,7 +123,7 @@ def test_gui():
         assert app.engine.scada_blind is True
 
         # Switch back to Teach Mode
-        app.toggle_mode()
+        app.set_game_mode("teach")
         assert app.engine.game_mode == "teach"
 
         # Step 11: Correct with allow FC 03 and drop FC 06
@@ -257,6 +263,16 @@ def test_gui():
         app.update()
         assert app.engine.tutorial_active is False
         assert app.engine.chapter == 1
+
+        # Step 23: Test UCL Audit Report window and HTML export
+        print("  -> Testing UCL Audit Report window and HTML export...")
+        app.engine.export_audit_report()
+        app.show_audit_report_window()
+        app.update()
+        html_out = app._build_html_report(app.engine.last_report_markdown)
+        assert "UCL" in html_out
+        assert "EKSAMENSRESULTAT" in html_out
+        assert "Karakter" in html_out
 
         # Clean up test save file
         if os.path.exists(expected_save):

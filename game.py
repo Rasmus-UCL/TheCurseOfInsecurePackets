@@ -11,8 +11,8 @@ import sys
 from engine import GameEngine
 
 
-def print_lore() -> None:
-    """Display the plant background, Purdue model and NIS2 context."""
+def print_background() -> None:
+    """Display the plant background story, Purdue model and NIS2 context."""
     print("\n" + "=" * 70)
     print("      OM SPILLET, PURDUE-MODELLEN & NIS2 CYBERSIKKERHED")
     print("=" * 70)
@@ -20,14 +20,15 @@ def print_lore() -> None:
 1. BAGGRUND: VANDVÆRKET NORDIC H2O UTILITY
 Nordic H2O Utility forsyner 85.000 borgere med rent drikkevand. De seneste uger
 har SCADA-systemet oplevet uforklarlige trykfald, uautoriseret fjernadgang og
-mystisk netværkstrafik. Nu er Pumpe 2 i akut alarmtilstand (trykket nærmer sig
-150 Bar sprængningsgrænsen!), og Miljø- og Cybersikkerhedstilsynet ved Revisor
-Kirsten har varslet et uanmeldt NIS2-tilsyn.
+mystisk netværkstrafik på tværs af produktionszonerne. Anlæggets zoner rammes nu
+af koordinerede tekniske cyberangreb, og Miljø- og Cybersikkerhedstilsynet ved
+Revisor Kirsten har indledt et uanmeldt 5-dages NIS2-tilsyn med trussel om
+10 mio. EUR i bøde.
 
 2. PURDUE MODELLEN & IEC 62443-3-2 ZONER & CONDUITS
 Anlæggets OT-arkitektur er opbygget jf. Purdue Enterprise Reference Architecture:
   • Level 0 (Fysisk proces):   Pumper, ventiler, tryktransmittere og flowmålere.
-  • Level 1 (Styring):         Siemens S7-1200 PLC'er, Danfoss VFD, Festo Ventil-ø.
+  • Level 1 (Styring):         Siemens S7-1500 PLC'er, SINAMICS VFD, Festo Ventil-ø.
   • Level 2 (Områdestyring):   Lokale HMI touchskærme, SCALANCE managed switches.
   • Level 3 (Driftsledelse):   SCADA WinCC servere, historikere, ingeniør-stationer.
   • Level 3.5 (IDMZ):          Industriel DMZ med firewalls, jump hosts og PKI Truststore.
@@ -54,7 +55,7 @@ Som væsentlig samfundskritisk enhed underlagt NIS2 skal forsyningen overholde:
 
 
 def run_cli() -> None:
-    """Start the text client with main menu (Teach/Exam, Load, Lore, Exit)."""
+    """Start the text client with main menu (Teach/Exam, Load, Background, Exit)."""
     while True:
         print("\n" + "=" * 70)
         print("          THE CURSE OF INSECURE PACKETS — HOVEDMENU")
@@ -63,7 +64,7 @@ def run_cli() -> None:
         print("  1. 🎓 Start Nyt Spil (Teach Mode — Vejledning & faldgruber)")
         print("  2. 📝 Start Nyt Spil (Exam Mode — Skarp evaluering, ingen hints)")
         print("  3. 💾 Indlæs Gemt Spil (Hent spil fra 'saves/' mappen)")
-        print("  4. 📖 Om Spillet & Lore (Purdue, NIS2 og narrativ baggrund)")
+        print("  4. 📖 Om Spillet & Baggrundshistorie (Purdue, NIS2 og scenarie)")
         print("  5. ❌ Afslut")
         print("=" * 70)
 
@@ -124,7 +125,7 @@ def run_cli() -> None:
                         break
 
         elif choice == "4":
-            print_lore()
+            print_background()
 
         elif choice in {"5", "q", "quit", "exit"}:
             print("\nTak for indsatsen hos Nordic H2O Utility. På gensyn!")

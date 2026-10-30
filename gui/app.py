@@ -942,7 +942,17 @@ class GameApp(tk.Tk):
 
     def toggle_mode(self) -> None:
         """Mode is locked during active gameplay (chosen only from the Start Menu)."""
-        pass
+        self.write_to_terminal(
+            f"\n🔒 [TILSTAND LÅST]: Spillet kører i {self.engine.game_mode.upper()} mode. "
+            "For at sikre en retvisende evaluering kan tilstanden kun vælges fra Startmenuen inden spilstart."
+        )
+
+    def set_game_mode(self, mode: str) -> None:
+        """Programmatic setter for mode (used by Start Menu and testing)."""
+        self.engine.game_mode = mode
+        self.update_mode_button()
+        self.update_action_buttons()
+        self.update_metrics_display()
 
     def update_mode_button(self) -> None:
         if self.engine.game_mode == "teach":
@@ -1127,13 +1137,12 @@ class GameApp(tk.Tk):
             p_color = "#ef4444" if self.engine.pump_time_remaining <= 30 else "#f87171"
             self.acute_label.configure(text=f"⚠️ PUMPE 2 ALARM: {pump_time}", fg=p_color)
         elif self.engine.chapter >= 5:
-            self.acute_label.configure(text="✅ Alle 4 produktionszoner er sikret", fg="#4ade80")
+            self.acute_label.configure(text="✅ Alle 4 produktionszoner er sikret — Fremlæg Sagstavle", fg="#4ade80")
         else:
-            solved = sum(
-                1 for f in ("chapter-1-done", "chapter-2-done", "chapter-3-done", "chapter-4-done")
-                if f in self.engine.flags
+            nis2_text, nis2_color = self.engine.incident.get_incident_status_line(
+                self.engine.simulated_day, self.engine.simulated_hour
             )
-            self.acute_label.configure(text=f"🛡️ Zoner sikret: {solved}/4", fg="#38bdf8" if solved > 0 else "#94a3b8")
+            self.acute_label.configure(text=nis2_text, fg=nis2_color)
 
         remaining_support = self.engine.max_help_calls - self.engine.help_calls
         self.support_btn.configure(
@@ -1253,6 +1262,7 @@ class GameApp(tk.Tk):
     def _build_html_report(self, report_md: str) -> str:
         import base64
         import html
+        import re
 
         logo_html = (
             '<div style="display:inline-block;padding:8px 16px;background:#00353c;'
@@ -1271,21 +1281,89 @@ class GameApp(tk.Tk):
             except Exception:
                 pass
 
+        def inline_fmt(text: str) -> str:
+            # Inline formatting for bold, italics, backticks
+            escaped = html.escape(text)
+            escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+            escaped = re.sub(r"\*(.+?)\*", r"<em>\1</em>", escaped)
+            escaped = re.sub(
+                r"`(.+?)`",
+                r'<code style="background:#f1f5f9;color:#0f5257;padding:2px 6px;border-radius:4px;font-family:Consolas,monospace;">\1</code>',
+                escaped,
+            )
+            return escaped
+
         lines_html: list[str] = []
+        in_table = False
+        table_rows: list[str] = []
+
+        def flush_table() -> None:
+            nonlocal in_table, table_rows
+            if table_rows:
+                lines_html.append('<table style="width:100%;border-collapse:collapse;margin:12px 0;font-size:13px;">')
+                for idx, r in enumerate(table_rows):
+                    cols = [c.strip() for c in r.strip().strip("|").split("|")]
+                    if idx == 0:
+                        lines_html.append('<tr style="background:#00454e;color:#ffffff;font-weight:bold;">')
+                        for c in cols:
+                            lines_html.append(f'<th style="border:1px solid #cbd5e1;padding:8px 10px;text-align:left;">{inline_fmt(c)}</th>')
+                        lines_html.append('</tr>')
+                    elif idx == 1 and all(set(c) <= set("-: ") for c in cols):
+                        continue
+                    else:
+                        bg = "#ffffff" if idx % 2 == 0 else "#f8fafc"
+                        lines_html.append(f'<tr style="background:{bg};">')
+                        for c in cols:
+                            lines_html.append(f'<border style="display:none;"></border><td style="border:1px solid #cbd5e1;padding:7px 10px;">{inline_fmt(c)}</td>')
+                        lines_html.append('</tr>')
+                lines_html.append('</table>')
+                table_rows = []
+            in_table = False
+
         for raw_line in report_md.splitlines():
-            escaped = html.escape(raw_line)
+            line_s = raw_line.strip()
+            if line_s.startswith("|") and line_s.endswith("|"):
+                in_table = True
+                table_rows.append(line_s)
+                continue
+            elif in_table:
+                flush_table()
+
             if raw_line.startswith("# "):
-                lines_html.append(f'<h1 style="color:#00454e;border-bottom:2px solid #00454e;padding-bottom:6px;margin-top:18px;">{html.escape(raw_line[2:])}</h1>')
+                lines_html.append(f'<h1 style="color:#00454e;border-bottom:3px solid #00454e;padding-bottom:6px;margin-top:20px;font-size:22px;">{inline_fmt(raw_line[2:])}</h1>')
             elif raw_line.startswith("## "):
-                lines_html.append(f'<h2 style="color:#0f5257;margin-top:18px;margin-bottom:6px;">{html.escape(raw_line[3:])}</h2>')
+                lines_html.append(f'<h2 style="color:#0f5257;border-bottom:1px solid #e2e8f0;padding-bottom:4px;margin-top:18px;margin-bottom:8px;font-size:17px;">{inline_fmt(raw_line[3:])}</h2>')
+            elif raw_line.startswith("### "):
+                lines_html.append(f'<h3 style="color:#134e4a;margin-top:14px;margin-bottom:6px;font-size:15px;">{inline_fmt(raw_line[4:])}</h3>')
+            elif raw_line.startswith("> "):
+                lines_html.append(
+                    f'<blockquote style="background:#f0fdf4;border-left:4px solid #0d9488;margin:10px 0;padding:10px 16px;border-radius:4px;font-style:italic;color:#134e4a;">'
+                    f'{inline_fmt(raw_line[2:])}</blockquote>'
+                )
             elif raw_line.startswith("- "):
-                lines_html.append(f'<li style="margin:4px 0;">{html.escape(raw_line[2:])}</li>')
-            elif raw_line.strip().startswith("|"):
-                lines_html.append(f'<div style="font-family:Consolas,monospace;background:#f1f5f9;padding:4px 8px;border-left:3px solid #00454e;">{escaped}</div>')
-            elif not raw_line.strip():
+                content = raw_line[2:]
+                if content.startswith("✅"):
+                    lines_html.append(f'<li style="margin:5px 0;color:#166534;">{inline_fmt(content)}</li>')
+                elif content.startswith("❌"):
+                    lines_html.append(f'<li style="margin:5px 0;color:#991b1b;">{inline_fmt(content)}</li>')
+                elif content.startswith("⚠️"):
+                    lines_html.append(f'<li style="margin:5px 0;color:#854d0e;">{inline_fmt(content)}</li>')
+                else:
+                    lines_html.append(f'<li style="margin:4px 0;">{inline_fmt(content)}</li>')
+            elif not line_s:
                 lines_html.append("<br/>")
             else:
-                lines_html.append(f"<p style='margin:4px 0;'>{escaped}</p>")
+                lines_html.append(f"<p style='margin:4px 0;'>{inline_fmt(raw_line)}</p>")
+
+        if in_table:
+            flush_table()
+
+        grade_code = getattr(self.engine, "last_audit_grade", "12")
+        score = getattr(self.engine, "last_audit_score", 100)
+        passed = getattr(self.engine, "last_audit_passed", True)
+
+        badge_color = "#047857" if passed else "#b91c1c"
+        badge_title = f"BESTÅET — Karakter {grade_code} ({score}/100 point)" if passed else f"IKKE BESTÅET — Karakter {grade_code} ({score}/100 point)"
 
         body_content = "\n".join(lines_html)
         return f"""<!DOCTYPE html>
@@ -1294,11 +1372,18 @@ class GameApp(tk.Tk):
 <meta charset="utf-8" />
 <title>NIS2 &amp; IEC 62443 Revisionsrapport - {html.escape(self.engine.player.name)}</title>
 <style>
+  @media print {{
+    body {{ background: #ffffff !important; padding: 0 !important; }}
+    .page {{ box-shadow: none !important; border: none !important; max-width: 100% !important; }}
+    .banner {{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
+    .no-print {{ display: none !important; }}
+  }}
   body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #e2e8f0; margin: 0; padding: 24px; color: #1e293b; }}
-  .page {{ max-width: 820px; margin: 0 auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 6px 24px rgba(0,0,0,0.12); }}
+  .page {{ max-width: 860px; margin: 0 auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 6px 24px rgba(0,0,0,0.12); }}
   .banner {{ background: #00454e; color: #ffffff; padding: 20px 28px; display: flex; align-items: center; justify-content: space-between; border-bottom: 4px solid #4fd1c5; }}
-  .content {{ padding: 28px 34px; line-height: 1.55; font-size: 14px; }}
-  .footer {{ background: #f8fafc; color: #64748b; padding: 14px 34px; font-size: 12px; border-top: 1px solid #cbd5e1; text-align: right; }}
+  .badge-bar {{ background: {badge_color}; color: #ffffff; padding: 8px 28px; font-weight: bold; font-size: 14px; letter-spacing: 0.5px; text-align: right; }}
+  .content {{ padding: 28px 36px; line-height: 1.6; font-size: 14px; }}
+  .footer {{ background: #f8fafc; color: #64748b; padding: 14px 36px; font-size: 12px; border-top: 1px solid #cbd5e1; text-align: right; }}
 </style>
 </head>
 <body>
@@ -1307,14 +1392,17 @@ class GameApp(tk.Tk):
       <div>{logo_html}</div>
       <div style="text-align:right;">
         <div style="font-size:16px;font-weight:bold;color:#e6fffa;">OT-SIKKERHED &amp; INDUSTRIELLE NETVÆRK</div>
-        <div style="font-size:12px;color:#b2f5ea;">Officiel NIS2 (EU 2022/2555) &amp; IEC 62443 Revisionsrapport</div>
+        <div style="font-size:12px;color:#b2f5ea;">Officiel NIS2 (EU 2022/2555) &amp; IEC 62443 Revisionsrapport &amp; Eksamensbilag</div>
       </div>
+    </div>
+    <div class="badge-bar">
+      🎓 EKSAMENSRESULTAT: {badge_title}
     </div>
     <div class="content">
       {body_content}
     </div>
     <div class="footer">
-      Genereret i The Curse of Insecure Packets — UCL Valgfag: OT-Sikkerhed &amp; Industrielle Netværk
+      Dokument genereret i The Curse of Insecure Packets — Erhvervsakademi og Professionshøjskole UCL
     </div>
   </div>
 </body>
@@ -1329,8 +1417,8 @@ class GameApp(tk.Tk):
         report_md = self.engine.last_report_markdown
         window = tk.Toplevel(self)
         window.title("Officiel NIS2 & IEC 62443 Revisionsrapport — UCL")
-        window.geometry("860x720")
-        window.minsize(780, 620)
+        window.geometry("880x740")
+        window.minsize(800, 640)
         window.configure(bg="#0b1520")
         window.transient(self)
 
@@ -1359,11 +1447,12 @@ class GameApp(tk.Tk):
             bg="#00454e", fg="#b2f5ea", font=("Segoe UI", 9, "bold"), anchor="w",
         ).pack(fill="x", pady=(2, 0))
 
-        verdict = self.engine.incident.evaluate_compliance()
-        passed = verdict["passed"]
+        passed = getattr(self.engine, "last_audit_passed", True)
+        score = getattr(self.engine, "last_audit_score", 100)
+        grade_code = getattr(self.engine, "last_audit_grade", "12")
         badge_bg = "#065f46" if passed else "#7f1d1d"
         badge_fg = "#6ee7b7" if passed else "#fca5a5"
-        badge_txt = f"✅ BESTÅET ({verdict['compliance_score']}%)" if passed else f"❌ DUMPET ({verdict['compliance_score']}%)"
+        badge_txt = f"✅ BESTÅET (Karakter {grade_code} • {score}p)" if passed else f"❌ DUMPET (Karakter {grade_code} • {score}p)"
         tk.Label(
             banner, text=badge_txt, bg=badge_bg, fg=badge_fg,
             font=("Segoe UI", 11, "bold"), padx=12, pady=8, relief="flat",

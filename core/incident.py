@@ -28,10 +28,69 @@ class IncidentManager:
         self.early_warning_on_time: bool = True
         self.wrong_reports: list[str] = []
         self.incident_detected_at: float = 0.0
+        self.incident_detected_day: int = 1
+        self.incident_detected_hour: int = 1
+        self.incident_name: str = "Aktiv OT-Netværkssabotage"
+        self.early_warning_submitted_day: int = 0
+        self.early_warning_submitted_hour: int = 0
 
-    def trigger_incident(self) -> None:
+    def trigger_incident(
+        self,
+        day: int = 1,
+        hour: int = 1,
+        incident_name: str = "Aktiv OT-Netværkssabotage",
+    ) -> None:
+        """Record the exact awareness/detection moment when the incident is first detected."""
         if self.incident_detected_at == 0.0:
             self.incident_detected_at = time.monotonic()
+            self.incident_detected_day = max(1, day)
+            self.incident_detected_hour = max(1, hour)
+            self.incident_name = incident_name
+
+    def get_elapsed_incident_hours(self, current_day: int, current_hour: int) -> int:
+        """Calculate elapsed simulated calendar hours since the incident was detected."""
+        if self.incident_detected_at == 0.0:
+            return 0
+        # In calendar simulation: each simulated workday represents a 24h cycle
+        return max(
+            0,
+            (current_day - self.incident_detected_day) * 24
+            + (current_hour - self.incident_detected_hour),
+        )
+
+    def get_remaining_early_warning_hours(self, current_day: int, current_hour: int) -> int:
+        """Calculate remaining hours before the statutory 24-hour Early Warning deadline expires."""
+        elapsed = self.get_elapsed_incident_hours(current_day, current_hour)
+        return max(0, 24 - elapsed)
+
+    def is_early_warning_expired(self, current_day: int, current_hour: int) -> bool:
+        """Check if the 24-hour statutory deadline has expired without an early warning being sent."""
+        if self.early_warning_sent:
+            return False
+        return self.get_elapsed_incident_hours(current_day, current_hour) > 24
+
+    def get_incident_status_line(self, current_day: int, current_hour: int) -> tuple[str, str]:
+        """Return (status_text, hex_color) for HUD display."""
+        if self.early_warning_sent:
+            return (
+                "✅ NIS2 24t Early Warning: Indsendt (#NIS2-DK-2026-H2O-0994)",
+                "#4ade80",
+            )
+        if self.incident_detected_at == 0.0:
+            return ("ℹ️ Anlæg: Aktiv overvågning (Ingen alarmer)", "#94a3b8")
+
+        rem = self.get_remaining_early_warning_hours(current_day, current_hour)
+        if rem > 0:
+            color = "#f6d365" if rem > 8 else "#fb923c"
+            return (
+                f"🚨 HÆNDELSE: {self.incident_name} | 🕒 24t Frist: {rem}t tilbage",
+                color,
+            )
+        diff = self.get_elapsed_incident_hours(current_day, current_hour) - 24
+        return (
+            f"⚠️ HÆNDELSE: {self.incident_name} | 🚨 24t Frist OVERSKREDET (+{diff}t for sent)",
+            "#ef4444",
+        )
 
     def record_wrong_report(self, player_name: str, reason: str) -> str:
         """Record a wrongful/inappropriate NIS2 Artikel 23 report and return Kirsten's angry response."""
@@ -56,6 +115,8 @@ class IncidentManager:
         """Submit the statutory 24-hour Early Warning to the CSIRT / supervisory authority."""
         name = player_name or "Konsulent"
         self.early_warning_sent = True
+        self.early_warning_submitted_day = day
+        self.early_warning_submitted_hour = hour
         rep = IncidentReport(
             submitted_day=day,
             submitted_hour=hour,
@@ -67,23 +128,26 @@ class IncidentManager:
         )
         self.reports.append(rep)
 
-        # Check 24-hour compliance: Day 1 or Day 2 before hour 8
-        is_compliant = (day == 1) or (day == 2 and hour <= 8)
+        # Statutory 24-hour awareness rule: check elapsed hours from awareness/detection
+        elapsed_hours = self.get_elapsed_incident_hours(day, hour)
+        is_compliant = elapsed_hours <= 24
         self.early_warning_on_time = is_compliant
         if is_compliant:
             return True, (
-                "✅ [NIS2 ARTIKEL 23.2 OVERHOLDT - REVISOR KIRSTEN ER TILFREDS]:\n"
-                f"Modtaget hos Miljø- og Cybersikkerhedstilsynet / CSIRT på Dag {day}, kl. {hour + 7:02d}:00.\n"
+                "✅ [NIS2 ARTIKEL 23.2 OVERHOLDT — REVISOR KIRSTEN ER TILFREDS]:\n"
+                f"Modtaget hos Miljø- og Cybersikkerhedstilsynet / CSIRT på Dag {day}, kl. {hour + 7:02d}:00 "
+                f"({elapsed_hours} timer efter detektering på Dag {self.incident_detected_day}, kl. {self.incident_detected_hour + 7:02d}:00).\n"
                 "Rapport-ID: #NIS2-DK-2026-H2O-0994.\n"
                 f"Kirsten nikker anerkendende i telefonen: \"Fremragende og rettidig indberetning, {name}! "
                 "Du har først isoleret og verificeret den væsentlige OT-hændelse og derefter indsendt jeres 24-timers "
-                "Early Warning inden for tidsfristen. Det tæller positivt i den afsluttende NIS2-rapport!\""
+                "Early Warning inden for tidsfristen (overholdt med {24 - elapsed_hours} timer til gode). Det tæller positivt i den afsluttende NIS2-rapport!\""
             )
         else:
             return False, (
-                "⚠️ [NIS2 ARTIKEL 23.2 OVERSKRIDELSE - REVISOR KIRSTEN ER UTILFREDS]:\n"
-                f"Hændelsesadvarslen blev først indsendt på Dag {day}, time {hour}.\n"
-                f"Kirsten siger skarpt: \"Det er for sent, {name}! Fristen på 24 timer fra detektering er overskredet! "
+                "⚠️ [NIS2 ARTIKEL 23.2 OVERSKRIDELSE — REVISOR KIRSTEN ER UTILFREDS]:\n"
+                f"Hændelsesadvarslen blev først indsendt på Dag {day}, kl. {hour + 7:02d}:00 "
+                f"({elapsed_hours} timer efter detektering — fristen var 24 timer).\n"
+                f"Kirsten siger skarpt: \"Det er for sent, {name}! Fristen på 24 timer fra detektering er overskredet med {elapsed_hours - 24} time(r)! "
                 "Tilsynet noterer manglende rettidig hændelsesindberetning i den afsluttende rapport!\""
             )
 
@@ -179,8 +243,9 @@ class IncidentManager:
             "",
             "## Gennemgang af NIS2 Artikel 21 Risikostyringsforanstaltninger:",
         ]
+        bad_words = {"mangler", "manglende", "kritisk", "fejl", "står", "blindet", "for sent", "ufuldstændig", "ukrypteret", "uautoriseret", "destrueret", "tab", "kompromitteret", "overskredet", "fejlagtig"}
         for r in remarks:
-            icon = "✅" if not any(w in r for w in {"Mangler", "Manglende", "KRITISK", "FEJL", "fejl", "står", "blindet"}) else "❌"
+            icon = "❌" if any(w in r.lower() for w in bad_words) else "✅"
             report.append(f"- {icon} {r}")
 
         report_text = "\n".join(report)
